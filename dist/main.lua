@@ -1,3 +1,17 @@
+local function program_dir()
+local ok,process=pcall(require,"process")
+local path=ok and process.info and process.info()and process.info().path
+path=path or os.getenv("_")
+if not path then
+local info=debug and debug.getinfo and debug.getinfo(1,"S")
+path=info and info.source and info.source:match("^@(.*)$")
+end
+return path and path:match("^(.*)[/\\][^/\\]*$")
+end
+local here=program_dir()
+if here and here~=""then
+package.path=here.."/?.lua;"..here.."/?/init.lua;"..package.path
+end
 local computer=require("computer")
 local connection=require("connection")
 local auth=require("auth")

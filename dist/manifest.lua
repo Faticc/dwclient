@@ -6,7 +6,7 @@
 	label = "dwclient",
 	keep = { "session.lua", "hwid.lua" },
 	files = {
-		{ "README.md",                 size = 8393, crc = "3deb3d00" },
+		{ "README.md",                 size = 8505, crc = "c21f3dda" },
 		{ "aes.lua",                   size = 4638, crc = "e464b0b3" },
 		{ "auth.lua",                  size = 1338, crc = "adad6442" },
 		{ "bignum.lua",                size = 3615, crc = "01ff8b88" },
@@ -21,7 +21,7 @@
 		{ "connection.lua",            size = 5907, crc = "119bf0ab" },
 		{ "fml.lua",                   size = 3124, crc = "da5b205d" },
 		{ "hwid.lua",                  size = 602, crc = "cb703006" },
-		{ "main.lua",                  size = 3782, crc = "d19a6613" },
+		{ "main.lua",                  size = 4266, crc = "2a5e017c" },
 		{ "mc_protocol.lua",           size = 3637, crc = "fd9c33d0" },
 		{ "modlist.lua",               size = 4877, crc = "1380f592" },
 		{ "rng.lua",                   size = 512, crc = "bc093e88" },

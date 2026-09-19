@@ -17,6 +17,32 @@ The same yield() is threaded through the login sequence (RSA is slow enough to n
 own yields), the socket reads, and the play loop, so there is exactly one place in the
 program that polls the keyboard and exactly one that pushes the screen.
 ]]
+-- Первым делом -- свой каталог в package.path. Без этого клиент не запустится ниоткуда,
+-- кроме собственного каталога: в package.path есть "./?.lua", но "." -- это текущий
+-- каталог ОБОЛОЧКИ, а не программы. Поставленный в /home/dwclient и запущенный из /home
+-- падает на первом же require("connection"): модули лежат рядом с main.lua, а ищут их
+-- в /home.
+--
+-- Путь берётся у процесса, а НЕ через debug.getinfo: в песочнице OpenComputers она
+-- отдаёт "=machine" для любого файла, так что узнать себя таким образом невозможно.
+-- Проверено на эмуляторе, см. test_install_ocvm.lua.
+local function program_dir()
+    local ok, process = pcall(require, "process")
+    local path = ok and process.info and process.info() and process.info().path
+    path = path or os.getenv("_")
+    if not path then
+        -- Обычный Lua, без OpenComputers: там getinfo как раз работает (тесты).
+        local info = debug and debug.getinfo and debug.getinfo(1, "S")
+        path = info and info.source and info.source:match("^@(.*)$")
+    end
+    return path and path:match("^(.*)[/\\][^/\\]*$")
+end
+
+local here = program_dir()
+if here and here ~= "" then
+    package.path = here .. "/?.lua;" .. here .. "/?/init.lua;" .. package.path
+end
+
 local computer = require("computer")
 
 local connection = require("connection")
