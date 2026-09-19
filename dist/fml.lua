@@ -67,6 +67,7 @@ function FmlHandshake:handle_payload(channel,data)
 if channel~=M.CHANNEL_HS then
 return
 end
+if#data==0 then return end
 local reader=proto.new_reader(data)
 local discriminator=string.byte(reader:read(1))
 if discriminator>=128 then discriminator=discriminator-256 end

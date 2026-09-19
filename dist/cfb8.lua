@@ -58,6 +58,16 @@ end
 self.r0,self.r1,self.r2,self.r3=r0,r1,r2,r3
 return table.concat(out)
 end
+function Stream:skip(ciphertext)
+local n=#ciphertext
+if n==0 then return end
+if n>=16 then
+self.r0,self.r1,self.r2,self.r3=bytes16_to_regs(ciphertext:sub(n-15,n))
+else
+local tail=regs_to_bytes16(self.r0,self.r1,self.r2,self.r3):sub(n+1,16)
+self.r0,self.r1,self.r2,self.r3=bytes16_to_regs(tail..ciphertext)
+end
+end
 function Stream:encrypt(plaintext,yield_fn)
 return self:_process(plaintext,false,yield_fn)
 end

@@ -213,10 +213,7 @@ local TRACE_DECRYPT_OVER = 4096
 function Connection:_raw_read(n)
     local data = M.read_exact(self.handle, n, self.yield_fn)
     if self.enc_in then
-        local loud = trace.enabled() and n >= TRACE_DECRYPT_OVER
-        if loud then trace.busy(string.format("расшифровка %d Б", n)) end
         data = self.enc_in:decrypt(data, self.cpu_yield)
-        if loud then trace.done(string.format("расшифровано %d Б", n)) end
     end
     return data
 end
@@ -235,11 +232,54 @@ function Connection:_read_varint_raw()
     return value
 end
 
-function Connection:read_packet()
+-- Сколько байт пакета расшифровывается всегда, до решения "нужен ли он целиком".
+-- Хватает на id пакета, имя канала и первый байт содержимого -- этого довольно, чтобы
+-- решить; для FML|HS этого довольно и чтобы ответить.
+local HEAD_BYTES = 96
+
+-- `wants(packet_id, head)` -- нужно ли содержимое целиком. head -- чтение по уже
+-- расшифрованному началу (после id). Если вернуть false, остаток пакета НЕ
+-- расшифровывается: поток просто прокручивается по шифротексту, без единого блока AES
+-- (см. cfb8.Stream:skip). Для реестра на 45 КБ это разница между десятками секунд и
+-- ничем.
+--
+-- Без wants ведёт себя как раньше: расшифровывает всё.
+function Connection:read_packet(wants)
     local length = self:_read_varint_raw()
-    local raw = self:_raw_read(length)
-    local reader = M.new_reader(raw)
-    local packet_id = reader:read_varint()
+    if not self.enc_in then
+        self.last_length = length
+        local reader = M.new_reader(M.read_exact(self.handle, length, self.yield_fn))
+        return reader:read_varint(), reader
+    end
+
+    self.last_length = length -- настоящий размер, даже если тело пропущено
+    local raw = M.read_exact(self.handle, length, self.yield_fn)
+    local head_n = length < HEAD_BYTES and length or HEAD_BYTES
+    local head = self.enc_in:decrypt(raw:sub(1, head_n), self.cpu_yield)
+
+    local probe = M.new_reader(head)
+    local packet_id = probe:read_varint()
+
+    if wants and not wants(packet_id, probe) then
+        if length > head_n then self.enc_in:skip(raw:sub(head_n + 1)) end
+        -- Читатель отдаётся в том же виде, что и на обычном пути: стоит сразу за id
+        -- пакета. Разница лишь в том, что за ним лежит расшифрованное начало, а не всё
+        -- тело. Вернуть его с нуля значило бы, что вызывающий примет байт id за первое
+        -- поле -- ровно это и поймал test_skip_flow.
+        local reader = M.new_reader(head)
+        reader:read_varint()
+        return packet_id, reader, true -- третий -- "тело пропущено"
+    end
+
+    local body = head
+    if length > head_n then
+        local loud = trace.enabled() and length >= TRACE_DECRYPT_OVER
+        if loud then trace.busy(string.format("расшифровка %d Б", length)) end
+        body = head .. self.enc_in:decrypt(raw:sub(head_n + 1), self.cpu_yield)
+        if loud then trace.done(string.format("расшифровано %d Б", length)) end
+    end
+    local reader = M.new_reader(body)
+    reader:read_varint()
     return packet_id, reader
 end
 

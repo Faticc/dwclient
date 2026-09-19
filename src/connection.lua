@@ -245,26 +245,49 @@ end
 
 -- on_chat(json_string), on_join(entity_id) -- both optional. Blocks until the server
 -- closes the connection or sends a Kick packet; returns the reason.
+-- Что из пакета нужно целиком, а что можно пройти не расшифровывая.
+--
+-- Клиент не следит за миром: чанки, движение сущностей, состояние окон -- всё это
+-- приходит и выбрасывается. Расшифровывать его значит считать AES на каждый байт
+-- впустую, а на машине OpenComputers это единственное, что вообще стоит времени.
+--
+-- Тонкость про FML|HS: рукопожатию нужен ровно один байт -- дискриминатор, -- и он
+-- всегда попадает в расшифрованное начало. Поэтому даже реестр на 45 КБ не нужен
+-- целиком: ответить на него можно, не прочитав ни байта содержимого.
+local function wants_body(packet_id, head)
+    if packet_id == KEEP_ALIVE_CLIENTBOUND or packet_id == CHAT_CLIENTBOUND
+        or packet_id == JOIN_GAME_CLIENTBOUND or packet_id == KICK_DISCONNECT_CLIENTBOUND then
+        return true
+    end
+    if packet_id == CUSTOM_PAYLOAD_CLIENTBOUND then
+        return false -- канал и дискриминатор уже в начале, остальное не читаем
+    end
+    return false
+end
+
 function GhostConnection:run(on_chat, on_join)
     local conn, handshake = self.conn, self.fml_handshake
     while true do
-        local ok, packet_id, reader = pcall(conn.read_packet, conn)
+        local ok, packet_id, reader = pcall(conn.read_packet, conn, wants_body)
         if not ok then
             return "connection closed unexpectedly: " .. tostring(packet_id)
         end
 
         self.packets = self.packets + 1
         self.last_id = packet_id
-        self.last_size = #reader.data
+        self.last_size = conn.last_length or #reader.data
 
         if packet_id == KEEP_ALIVE_CLIENTBOUND then
             conn:send_packet(KEEP_ALIVE, reader:read(4))
         elseif packet_id == CHAT_CLIENTBOUND then
             if on_chat then on_chat(reader:read_string()) end
         elseif packet_id == CUSTOM_PAYLOAD_CLIENTBOUND then
+            -- reader стоит на начале пакета: id уже прочитан. Дальше имя канала, длина
+            -- и содержимое -- но содержимое здесь обрезано до расшифрованного начала, и
+            -- это ровно то, что нужно: рукопожатию хватает первого байта.
             local channel = reader:read_string()
-            local data_len = reader:read_i16()
-            handshake:handle_payload(channel, reader:read(data_len))
+            reader:read_i16() -- объявленная длина; реальных байт может быть меньше
+            handshake:handle_payload(channel, reader:remaining())
         elseif packet_id == JOIN_GAME_CLIENTBOUND then
             trace.step("Join Game: сервер впустил в мир")
             self.entity_id = reader:read(4)

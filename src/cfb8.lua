@@ -97,6 +97,32 @@ function Stream:_process(data, is_decrypt, yield_fn)
     return table.concat(out)
 end
 
+-- Пройти шифротекст, НЕ расшифровывая его: регистр сдвигается, открытый текст не
+-- считается.
+--
+-- Это не оптимизация "на глазок", а прямое следствие правила выше: при расшифровке в
+-- регистр вдвигается входной байт, то есть сам шифротекст. Ключевой поток нужен только
+-- чтобы получить открытый текст, а на состояние потока он не влияет вовсе. Значит для
+-- пакета, содержимое которого не нужно, весь AES -- лишняя работа, и её можно не делать,
+-- оставшись ровно в том же состоянии.
+--
+-- Разница не косметическая. Реестр блоков и предметов приходит одним пакетом на 45 КБ,
+-- клиент его не читает (он не следит за миром) -- а это 45 тысяч блоков AES на чистом
+-- Lua, десятки секунд на машине OpenComputers. Здесь их ноль.
+--
+-- Работает только на расшифровке: при шифровании в регистр вдвигается ВЫХОДНОЙ байт,
+-- которого без AES не узнать.
+function Stream:skip(ciphertext)
+    local n = #ciphertext
+    if n == 0 then return end
+    if n >= 16 then
+        self.r0, self.r1, self.r2, self.r3 = bytes16_to_regs(ciphertext:sub(n - 15, n))
+    else
+        local tail = regs_to_bytes16(self.r0, self.r1, self.r2, self.r3):sub(n + 1, 16)
+        self.r0, self.r1, self.r2, self.r3 = bytes16_to_regs(tail .. ciphertext)
+    end
+end
+
 function Stream:encrypt(plaintext, yield_fn)
     return self:_process(plaintext, false, yield_fn)
 end

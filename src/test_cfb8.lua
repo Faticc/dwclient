@@ -44,4 +44,55 @@ local part2 = enc2:encrypt(plaintext:sub(8))
 local chunked_ok = (part1 .. part2) == hex_to_bytes(expected_ct)
 print("chunked encrypt matches single-call: " .. tostring(chunked_ok))
 
-os.exit((enc_ok and dec_ok and chunked_ok) and 0 or 1)
+if not (enc_ok and dec_ok and chunked_ok) then os.exit(1) end
+
+-- --------------------------------------------------------------------------
+-- skip(): пройти шифротекст, не расшифровывая, и остаться в том же состоянии
+-- --------------------------------------------------------------------------
+local function hex(s) return (s:gsub(".", function(c) return string.format("%02x", c:byte()) end)) end
+
+local key = "0123456789abcdef"
+local plain = "начало|" .. string.rep("середина, которую читать незачем;", 40) .. "|хвост"
+local cipher = cfb8.Stream.new(key):encrypt(plain)
+
+-- Сколько байт в начале и в конце нас интересуют; всё между ними пропускаем.
+for _, head in ipairs({ 1, 7, 16, 33, 64 }) do
+    for _, tail in ipairs({ 1, 6, 20 }) do
+        local middle = #cipher - head - tail
+        if middle > 0 then
+            local full = cfb8.Stream.new(key):decrypt(cipher)
+
+            local s = cfb8.Stream.new(key)
+            local got_head = s:decrypt(cipher:sub(1, head))
+            s:skip(cipher:sub(head + 1, head + middle))
+            local got_tail = s:decrypt(cipher:sub(head + middle + 1))
+
+            local ok_head = got_head == full:sub(1, head)
+            local ok_tail = got_tail == full:sub(head + middle + 1)
+            local label = string.format("skip: голова %d, пропуск %d, хвост %d", head, middle, tail)
+            if ok_head and ok_tail then
+                print("  ok   " .. label)
+            else
+                print("  FAIL " .. label)
+                print("    хвост получен  " .. hex(got_tail))
+                print("    хвост ожидался " .. hex(full:sub(head + middle + 1)))
+                os.exit(1)
+            end
+        end
+    end
+end
+
+-- Пропуск короче регистра -- отдельный случай: старое состояние частично остаётся.
+local s1, s2 = cfb8.Stream.new(key), cfb8.Stream.new(key)
+s1:decrypt(cipher:sub(1, 40))
+s2:decrypt(cipher:sub(1, 3))
+s2:skip(cipher:sub(4, 40))
+if s1:decrypt(cipher:sub(41)) == s2:decrypt(cipher:sub(41)) then
+    print("  ok   skip: короткие куски дают то же состояние")
+else
+    print("  FAIL skip: короткие куски расходятся")
+    os.exit(1)
+end
+
+print("")
+print("все проверки cfb8 пройдены")

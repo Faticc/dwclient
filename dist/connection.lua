@@ -174,24 +174,34 @@ proto.write_string(self.locale)
 ..string.char(2)
 .."\1")
 end
+local function wants_body(packet_id,head)
+if packet_id==KEEP_ALIVE_CLIENTBOUND or packet_id==CHAT_CLIENTBOUND
+or packet_id==JOIN_GAME_CLIENTBOUND or packet_id==KICK_DISCONNECT_CLIENTBOUND then
+return true
+end
+if packet_id==CUSTOM_PAYLOAD_CLIENTBOUND then
+return false
+end
+return false
+end
 function GhostConnection:run(on_chat,on_join)
 local conn,handshake=self.conn,self.fml_handshake
 while true do
-local ok,packet_id,reader=pcall(conn.read_packet,conn)
+local ok,packet_id,reader=pcall(conn.read_packet,conn,wants_body)
 if not ok then
 return"connection closed unexpectedly: "..tostring(packet_id)
 end
 self.packets=self.packets+1
 self.last_id=packet_id
-self.last_size=#reader.data
+self.last_size=conn.last_length or#reader.data
 if packet_id==KEEP_ALIVE_CLIENTBOUND then
 conn:send_packet(KEEP_ALIVE,reader:read(4))
 elseif packet_id==CHAT_CLIENTBOUND then
 if on_chat then on_chat(reader:read_string())end
 elseif packet_id==CUSTOM_PAYLOAD_CLIENTBOUND then
 local channel=reader:read_string()
-local data_len=reader:read_i16()
-handshake:handle_payload(channel,reader:read(data_len))
+reader:read_i16()
+handshake:handle_payload(channel,reader:remaining())
 elseif packet_id==JOIN_GAME_CLIENTBOUND then
 trace.step("Join Game: сервер впустил в мир")
 self.entity_id=reader:read(4)
