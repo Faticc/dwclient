@@ -6,7 +6,7 @@
 	label = "dwclient",
 	keep = { "session.lua", "hwid.lua" },
 	files = {
-		{ "README.md",                 size = 7501, crc = "913e4fc2" },
+		{ "README.md",                 size = 8393, crc = "3deb3d00" },
 		{ "aes.lua",                   size = 4638, crc = "e464b0b3" },
 		{ "auth.lua",                  size = 1338, crc = "adad6442" },
 		{ "bignum.lua",                size = 3615, crc = "01ff8b88" },
