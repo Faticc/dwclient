@@ -56,7 +56,11 @@ end
 -- event.pull(0, "key_down") ever sees it; that starved typed chat/commands even once
 -- the "too long without yielding" kick below was fixed, since every idle wait for the
 -- next packet ran through here, not just large encrypted payloads).
-function M.read_exact(handle, n, yield_fn)
+-- `yield_fn` -- уступка, когда данных ещё нет: тут спать и надо, это и есть ожидание.
+-- `cpu_yield` -- уступка по часам, когда данные идут: сторожа кормить надо, а платить
+-- тиком за каждый кусок -- нет. Реестр на 45 КБ приходит десятками кусков, и уступка на
+-- каждый стоила пять секунд на ровном месте.
+function M.read_exact(handle, n, yield_fn, cpu_yield)
     yield_fn = yield_fn or default_yield
     local chunks = {}
     local remaining = n
@@ -68,15 +72,10 @@ function M.read_exact(handle, n, yield_fn)
         if #chunk > 0 then
             chunks[#chunks + 1] = chunk
             remaining = remaining - #chunk
+            if remaining > 0 and cpu_yield then cpu_yield() end
+        else
+            yield_fn()
         end
-        -- Yield once per read attempt, whether or not it returned data. Yielding only
-        -- on a fully-empty read (an earlier version of this fix) still wasn't enough:
-        -- OpenComputers' internet handle can hand back a large payload (this server's
-        -- REGISTER/ModList/tab-list-sync packets run several KB to tens of KB) as many
-        -- small but non-empty chunks in a row, and reading all of those back-to-back
-        -- with zero yields in between can by itself exceed the "too long without
-        -- yielding" watchdog window, even though no single read ever came back empty.
-        yield_fn()
     end
     return table.concat(chunks)
 end
@@ -211,7 +210,7 @@ end
 local TRACE_DECRYPT_OVER = 4096
 
 function Connection:_raw_read(n)
-    local data = M.read_exact(self.handle, n, self.yield_fn)
+    local data = M.read_exact(self.handle, n, self.yield_fn, self.cpu_yield)
     if self.enc_in then
         data = self.enc_in:decrypt(data, self.cpu_yield)
     end
@@ -237,50 +236,53 @@ end
 -- решить; для FML|HS этого довольно и чтобы ответить.
 local HEAD_BYTES = 96
 
--- `wants(packet_id, head)` -- нужно ли содержимое целиком. head -- чтение по уже
--- расшифрованному началу (после id). Если вернуть false, остаток пакета НЕ
--- расшифровывается: поток просто прокручивается по шифротексту, без единого блока AES
--- (см. cfb8.Stream:skip). Для реестра на 45 КБ это разница между десятками секунд и
--- ничем.
+-- `wants(packet_id)` отвечает, сколько пакета нужно:
 --
--- Без wants ведёт себя как раньше: расшифровывает всё.
+--   "full" -- всё содержимое (чат, keep-alive: они маленькие)
+--   "head" -- только начало: хватит на имя канала и первый байт содержимого
+--   "skip" -- ничего; поток прокручивается по шифротексту, без единого блока AES
+--
+-- Решение принимается ПОСЛЕ расшифровки одного байта -- id пакета. Это важнее, чем
+-- кажется: сервер шлёт около 170 пакетов в секунду, почти все на модовых каналах,
+-- которые клиенту не нужны совсем. Расшифровывать у каждого хотя бы начало значило бы
+-- под сотню блоков AES на пакет впустую; так их один.
+--
+-- Все игровые id версии 1.7.10 меньше 0x80, то есть занимают ровно один байт varint.
 function Connection:read_packet(wants)
     local length = self:_read_varint_raw()
+    self.last_length = length
+
     if not self.enc_in then
-        self.last_length = length
-        local reader = M.new_reader(M.read_exact(self.handle, length, self.yield_fn))
+        local reader = M.new_reader(M.read_exact(self.handle, length, self.yield_fn, self.cpu_yield))
         return reader:read_varint(), reader
     end
 
-    self.last_length = length -- настоящий размер, даже если тело пропущено
-    local raw = M.read_exact(self.handle, length, self.yield_fn)
-    local head_n = length < HEAD_BYTES and length or HEAD_BYTES
-    local head = self.enc_in:decrypt(raw:sub(1, head_n), self.cpu_yield)
+    local raw = M.read_exact(self.handle, length, self.yield_fn, self.cpu_yield)
+    local first = self.enc_in:decrypt(raw:sub(1, 1), self.cpu_yield)
+    local packet_id = string.byte(first)
 
-    local probe = M.new_reader(head)
-    local packet_id = probe:read_varint()
-
-    if wants and not wants(packet_id, probe) then
-        if length > head_n then self.enc_in:skip(raw:sub(head_n + 1)) end
-        -- Читатель отдаётся в том же виде, что и на обычном пути: стоит сразу за id
-        -- пакета. Разница лишь в том, что за ним лежит расшифрованное начало, а не всё
-        -- тело. Вернуть его с нуля значило бы, что вызывающий примет байт id за первое
-        -- поле -- ровно это и поймал test_skip_flow.
-        local reader = M.new_reader(head)
-        reader:read_varint()
-        return packet_id, reader, true -- третий -- "тело пропущено"
+    local mode = wants and wants(packet_id) or "full"
+    if mode == "skip" then
+        if length > 1 then self.enc_in:skip(raw:sub(2)) end
+        return packet_id, nil, true
     end
 
-    local body = head
-    if length > head_n then
-        local loud = trace.enabled() and length >= TRACE_DECRYPT_OVER
-        if loud then trace.busy(string.format("расшифровка %d Б", length)) end
-        body = head .. self.enc_in:decrypt(raw:sub(head_n + 1), self.cpu_yield)
-        if loud then trace.done(string.format("расшифровано %d Б", length)) end
+    local want_n = length
+    if mode == "head" and HEAD_BYTES < length then want_n = HEAD_BYTES end
+
+    local body = first
+    if want_n > 1 then
+        local loud = trace.enabled() and want_n >= TRACE_DECRYPT_OVER
+        if loud then trace.busy(string.format("расшифровка %d Б", want_n)) end
+        body = first .. self.enc_in:decrypt(raw:sub(2, want_n), self.cpu_yield)
+        if loud then trace.done(string.format("расшифровано %d Б", want_n)) end
     end
+    if want_n < length then self.enc_in:skip(raw:sub(want_n + 1)) end
+
+    -- Читатель отдаётся стоящим сразу за id пакета -- как и на пути без шифрования.
     local reader = M.new_reader(body)
     reader:read_varint()
-    return packet_id, reader
+    return packet_id, reader, want_n < length
 end
 
 function Connection:send_packet(packet_id, payload)

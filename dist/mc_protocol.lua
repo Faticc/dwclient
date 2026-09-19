@@ -15,7 +15,7 @@ yield_fn(done,total)
 end
 end
 end
-function M.read_exact(handle,n,yield_fn)
+function M.read_exact(handle,n,yield_fn,cpu_yield)
 yield_fn=yield_fn or default_yield
 local chunks={}
 local remaining=n
@@ -27,8 +27,10 @@ end
 if#chunk>0 then
 chunks[#chunks+1]=chunk
 remaining=remaining-#chunk
-end
+if remaining>0 and cpu_yield then cpu_yield()end
+else
 yield_fn()
+end
 end
 return table.concat(chunks)
 end
@@ -126,7 +128,7 @@ self.enc_out=cfb8.Stream.new(shared_secret16)
 end
 local TRACE_DECRYPT_OVER=4096
 function Connection:_raw_read(n)
-local data=M.read_exact(self.handle,n,self.yield_fn)
+local data=M.read_exact(self.handle,n,self.yield_fn,self.cpu_yield)
 if self.enc_in then
 data=self.enc_in:decrypt(data,self.cpu_yield)
 end
@@ -147,33 +149,32 @@ end
 local HEAD_BYTES=96
 function Connection:read_packet(wants)
 local length=self:_read_varint_raw()
-if not self.enc_in then
 self.last_length=length
-local reader=M.new_reader(M.read_exact(self.handle,length,self.yield_fn))
+if not self.enc_in then
+local reader=M.new_reader(M.read_exact(self.handle,length,self.yield_fn,self.cpu_yield))
 return reader:read_varint(),reader
 end
-self.last_length=length
-local raw=M.read_exact(self.handle,length,self.yield_fn)
-local head_n=length<HEAD_BYTES and length or HEAD_BYTES
-local head=self.enc_in:decrypt(raw:sub(1,head_n),self.cpu_yield)
-local probe=M.new_reader(head)
-local packet_id=probe:read_varint()
-if wants and not wants(packet_id,probe)then
-if length>head_n then self.enc_in:skip(raw:sub(head_n+1))end
-local reader=M.new_reader(head)
-reader:read_varint()
-return packet_id,reader,true
+local raw=M.read_exact(self.handle,length,self.yield_fn,self.cpu_yield)
+local first=self.enc_in:decrypt(raw:sub(1,1),self.cpu_yield)
+local packet_id=string.byte(first)
+local mode=wants and wants(packet_id)or"full"
+if mode=="skip"then
+if length>1 then self.enc_in:skip(raw:sub(2))end
+return packet_id,nil,true
 end
-local body=head
-if length>head_n then
-local loud=trace.enabled()and length>=TRACE_DECRYPT_OVER
-if loud then trace.busy(string.format("расшифровка %d Б",length))end
-body=head..self.enc_in:decrypt(raw:sub(head_n+1),self.cpu_yield)
-if loud then trace.done(string.format("расшифровано %d Б",length))end
+local want_n=length
+if mode=="head"and HEAD_BYTES<length then want_n=HEAD_BYTES end
+local body=first
+if want_n>1 then
+local loud=trace.enabled()and want_n>=TRACE_DECRYPT_OVER
+if loud then trace.busy(string.format("расшифровка %d Б",want_n))end
+body=first..self.enc_in:decrypt(raw:sub(2,want_n),self.cpu_yield)
+if loud then trace.done(string.format("расшифровано %d Б",want_n))end
 end
+if want_n<length then self.enc_in:skip(raw:sub(want_n+1))end
 local reader=M.new_reader(body)
 reader:read_varint()
-return packet_id,reader
+return packet_id,reader,want_n<length
 end
 function Connection:send_packet(packet_id,payload)
 payload=payload or""

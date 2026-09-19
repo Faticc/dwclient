@@ -174,26 +174,29 @@ proto.write_string(self.locale)
 ..string.char(2)
 .."\1")
 end
-local function wants_body(packet_id,head)
+function GhostConnection:_wants(packet_id)
 if packet_id==KEEP_ALIVE_CLIENTBOUND or packet_id==CHAT_CLIENTBOUND
 or packet_id==JOIN_GAME_CLIENTBOUND or packet_id==KICK_DISCONNECT_CLIENTBOUND then
-return true
+return"full"
 end
 if packet_id==CUSTOM_PAYLOAD_CLIENTBOUND then
-return false
+return self.fml_handshake.done and"skip"or"head"
 end
-return false
+return"skip"
 end
 function GhostConnection:run(on_chat,on_join)
 local conn,handshake=self.conn,self.fml_handshake
+local wants=function(id)return self:_wants(id)end
+local tick_yield=proto.throttled(self.yield_fn,0.1)
 while true do
-local ok,packet_id,reader=pcall(conn.read_packet,conn,wants_body)
+local ok,packet_id,reader,skipped=pcall(conn.read_packet,conn,wants)
 if not ok then
 return"connection closed unexpectedly: "..tostring(packet_id)
 end
 self.packets=self.packets+1
 self.last_id=packet_id
-self.last_size=conn.last_length or#reader.data
+self.last_size=conn.last_length or 0
+if not skipped or reader then
 if packet_id==KEEP_ALIVE_CLIENTBOUND then
 conn:send_packet(KEEP_ALIVE,reader:read(4))
 elseif packet_id==CHAT_CLIENTBOUND then
@@ -211,7 +214,8 @@ elseif packet_id==KICK_DISCONNECT_CLIENTBOUND then
 trace.step("сервер прислал кик")
 return reader:read_string()
 end
-self.yield_fn()
+end
+tick_yield()
 end
 end
 function GhostConnection:close()

@@ -34,6 +34,16 @@ package.loaded["computer"] = { totalMemory = function() return 2 ^ 21 end,
 
 local proto = require("mc_protocol")
 local cfb8 = require("cfb8")
+
+-- Считаем, сколько байт клиент реально расшифровал: в этом и смысл пропуска, и это
+-- единственное, что нельзя проверить, глядя на результат -- он и так обязан быть верным.
+local decrypted = 0
+local real_decrypt = cfb8.Stream.decrypt
+cfb8.Stream.decrypt = function(self, data, yield_fn)
+    decrypted = decrypted + #data
+    return real_decrypt(self, data, yield_fn)
+end
+
 local connection = require("connection")
 
 local SECRET = "0123456789abcdef"
@@ -80,6 +90,13 @@ check("рукопожатие FML завершено", conn.fml_handshake.done, 
 check("чат после пропущенных тел цел", seen_chat, '{"text":"привет"}')
 check("прочитано пакетов", conn.packets, 7)
 check("последний размер -- настоящий", conn.last_size and conn.last_size > 0, true)
+
+-- Через соединение прошло больше 53 КБ (реестр 45 КБ + tabmod 8 КБ), а расшифровать
+-- клиент обязан лишь крохи: id пакетов, имена каналов, дискриминаторы и сам чат.
+local sent_total = 45000 + 8000
+print(string.format("  ..  расшифровано %d Б из более чем %d Б, прошедших через поток",
+    decrypted, sent_total))
+check("расшифровано меньше килобайта", decrypted < 1024, true)
 print("  ..  соединение закрылось как ожидалось: " .. tostring(reason):sub(1, 40))
 
 if failures > 0 then print("\n" .. failures .. " FAILED"); os.exit(1) end

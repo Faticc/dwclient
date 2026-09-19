@@ -245,59 +245,70 @@ end
 
 -- on_chat(json_string), on_join(entity_id) -- both optional. Blocks until the server
 -- closes the connection or sends a Kick packet; returns the reason.
--- Что из пакета нужно целиком, а что можно пройти не расшифровывая.
+-- Сколько пакета нужно. Считается на каждый пакет, поэтому дёшево и без таблиц.
 --
--- Клиент не следит за миром: чанки, движение сущностей, состояние окон -- всё это
--- приходит и выбрасывается. Расшифровывать его значит считать AES на каждый байт
--- впустую, а на машине OpenComputers это единственное, что вообще стоит времени.
---
--- Тонкость про FML|HS: рукопожатию нужен ровно один байт -- дискриминатор, -- и он
--- всегда попадает в расшифрованное начало. Поэтому даже реестр на 45 КБ не нужен
--- целиком: ответить на него можно, не прочитав ни байта содержимого.
-local function wants_body(packet_id, head)
+-- Клиент не следит за миром: чанки, движение сущностей, состояние окон приходят и
+-- выбрасываются. Модовые каналы (0x3F) нужны ровно до конца рукопожатия FML -- после
+-- него ни один из них не читается, а сервер шлёт их сотнями в секунду.
+function GhostConnection:_wants(packet_id)
     if packet_id == KEEP_ALIVE_CLIENTBOUND or packet_id == CHAT_CLIENTBOUND
         or packet_id == JOIN_GAME_CLIENTBOUND or packet_id == KICK_DISCONNECT_CLIENTBOUND then
-        return true
+        return "full"
     end
     if packet_id == CUSTOM_PAYLOAD_CLIENTBOUND then
-        return false -- канал и дискриминатор уже в начале, остальное не читаем
+        return self.fml_handshake.done and "skip" or "head"
     end
-    return false
+    return "skip"
 end
 
+-- on_chat(json_string), on_join(entity_id) -- both optional. Blocks until the server
+-- closes the connection or sends a Kick packet; returns the reason.
 function GhostConnection:run(on_chat, on_join)
     local conn, handshake = self.conn, self.fml_handshake
+    local wants = function(id) return self:_wants(id) end
+
+    -- Уступать на КАЖДЫЙ пакет нельзя: уступка стоит тик (50 мс), то есть потолок в 20
+    -- пакетов в секунду, а сервер шлёт около 170. Клиент отставал бы безнадёжно, буфер
+    -- карты переполнялся -- ровно так соединение и рвалось посреди пакета.
+    --
+    -- Поэтому здесь уступка по часам: сторожа кормит, клавиатуру и экран обновляет
+    -- десяток раз в секунду, а пакеты идут сплошным потоком. Спать, когда сервер
+    -- молчит, всё равно есть кому: read_exact уступает по-настоящему, если данных нет.
+    local tick_yield = proto.throttled(self.yield_fn, 0.1)
+
     while true do
-        local ok, packet_id, reader = pcall(conn.read_packet, conn, wants_body)
+        local ok, packet_id, reader, skipped = pcall(conn.read_packet, conn, wants)
         if not ok then
             return "connection closed unexpectedly: " .. tostring(packet_id)
         end
 
         self.packets = self.packets + 1
         self.last_id = packet_id
-        self.last_size = conn.last_length or #reader.data
+        self.last_size = conn.last_length or 0
 
-        if packet_id == KEEP_ALIVE_CLIENTBOUND then
-            conn:send_packet(KEEP_ALIVE, reader:read(4))
-        elseif packet_id == CHAT_CLIENTBOUND then
-            if on_chat then on_chat(reader:read_string()) end
-        elseif packet_id == CUSTOM_PAYLOAD_CLIENTBOUND then
-            -- reader стоит на начале пакета: id уже прочитан. Дальше имя канала, длина
-            -- и содержимое -- но содержимое здесь обрезано до расшифрованного начала, и
-            -- это ровно то, что нужно: рукопожатию хватает первого байта.
-            local channel = reader:read_string()
-            reader:read_i16() -- объявленная длина; реальных байт может быть меньше
-            handshake:handle_payload(channel, reader:remaining())
-        elseif packet_id == JOIN_GAME_CLIENTBOUND then
-            trace.step("Join Game: сервер впустил в мир")
-            self.entity_id = reader:read(4)
-            self:_send_initial_packets()
-            if on_join then on_join(self.entity_id) end
-        elseif packet_id == KICK_DISCONNECT_CLIENTBOUND then
-            trace.step("сервер прислал кик")
-            return reader:read_string()
+        if not skipped or reader then
+            if packet_id == KEEP_ALIVE_CLIENTBOUND then
+                conn:send_packet(KEEP_ALIVE, reader:read(4))
+            elseif packet_id == CHAT_CLIENTBOUND then
+                if on_chat then on_chat(reader:read_string()) end
+            elseif packet_id == CUSTOM_PAYLOAD_CLIENTBOUND then
+                -- Читатель стоит за id: дальше имя канала, объявленная длина и
+                -- содержимое, обрезанное до расшифрованного начала. Рукопожатию хватает
+                -- первого байта -- дискриминатора.
+                local channel = reader:read_string()
+                reader:read_i16()
+                handshake:handle_payload(channel, reader:remaining())
+            elseif packet_id == JOIN_GAME_CLIENTBOUND then
+                trace.step("Join Game: сервер впустил в мир")
+                self.entity_id = reader:read(4)
+                self:_send_initial_packets()
+                if on_join then on_join(self.entity_id) end
+            elseif packet_id == KICK_DISCONNECT_CLIENTBOUND then
+                trace.step("сервер прислал кик")
+                return reader:read_string()
+            end
         end
-        self.yield_fn()
+        tick_yield()
     end
 end
 
