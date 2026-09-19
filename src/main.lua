@@ -48,7 +48,6 @@ local computer = require("computer")
 local connection = require("connection")
 local auth = require("auth")
 local chat_format = require("chat_format")
-local cluster_client = require("cluster_client")
 local ui_lib = require("ui")
 
 -- Кто заходит -- в session.lua, это единственный файл под правку руками, и обновление
@@ -79,13 +78,6 @@ local function say(text, color)
     if ui then ui:note(text, color) else print(text) end
 end
 
--- Splits big incoming AES/CFB8 payloads -- the registry message right after login is
--- 45KB on this server -- across Linked Card workers instead of decrypting them all
--- here. Nothing to configure: it finds every Linked Card plugged into this computer and
--- uses what it finds; with none installed it is simply off and everything decrypts
--- locally. Each card must be paired with one on a worker running cluster_worker_bundle.
-local cluster = cluster_client.new()
-
 local conn          -- assigned below; handle_key_down sees it through this upvalue
 local connected = false -- guards against sending chat before the handshake is finished,
                         -- which would inject a play packet into the login sequence
@@ -94,8 +86,11 @@ local last_status = 0
 
 local function status_line()
     local total, free = computer.totalMemory(), computer.freeMemory()
-    return string.format("mem %dK/%dK  %s", (total - free) / 1024, total / 1024,
-        connected and "connected" or "connecting")
+    -- math.floor, а не просто деление: в Lua 5.3 "/" всегда даёт float, а "%d" требует
+    -- целого и на дробном падает с "number has no integer representation". Строка
+    -- состояния обновляется раз в секунду, так что уронило бы клиент уже в игре.
+    return string.format("mem %dK/%dK  %s", math.floor((total - free) / 1024),
+        math.floor(total / 1024), connected and "connected" or "connecting")
 end
 
 local function handle_key_down(char, code)
@@ -161,11 +156,8 @@ local function join_server_fn(access_token, uuid_no_dashes, server_hash)
     auth.join_server(access_token, uuid_no_dashes, server_hash)
 end
 
-conn = connection.new(HOST, PORT, SESSION, require("modlist"), join_server_fn, yield, cluster)
+conn = connection.new(HOST, PORT, SESSION, require("modlist"), join_server_fn, yield)
 
-say(cluster:available()
-    and ("cluster decrypt: " .. #cluster.tunnels .. " Linked Card worker(s)")
-    or "cluster decrypt: off (no Linked Cards, decrypting locally)")
 say("connecting to " .. HOST .. ":" .. PORT .. " as " .. SESSION.username .. " ...")
 if ui then ui:flush(true) end
 

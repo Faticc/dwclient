@@ -28,7 +28,6 @@ initial_register16=initial_register16 or shared_secret16
 assert(#initial_register16==16,"initial CFB8 register must be 16 bytes")
 local r0,r1,r2,r3=bytes16_to_regs(initial_register16)
 return setmetatable({
-key16=shared_secret16,
 rk=aes.expand_key(shared_secret16),
 r0=r0,r1=r1,r2=r2,r3=r3,
 },Stream)
@@ -61,27 +60,7 @@ end
 function Stream:encrypt(plaintext,yield_fn)
 return self:_process(plaintext,false,yield_fn)
 end
-function Stream:register()
-return regs_to_bytes16(self.r0,self.r1,self.r2,self.r3)
-end
-function Stream:_advance_register(feedback)
-local n=#feedback
-local tail
-if n>=16 then
-tail=feedback:sub(n-15,n)
-else
-tail=self:register():sub(n+1,16)..feedback
-end
-self.r0,self.r1,self.r2,self.r3=bytes16_to_regs(tail)
-end
-function Stream:decrypt(ciphertext,yield_fn,cluster)
-if cluster and cluster:available()and#ciphertext>=cluster.min_size then
-local ok,result=pcall(cluster.decrypt,cluster,ciphertext,self.key16,self:register(),yield_fn)
-if ok then
-self:_advance_register(ciphertext)
-return result
-end
-end
+function Stream:decrypt(ciphertext,yield_fn)
 return self:_process(ciphertext,true,yield_fn)
 end
 return{Stream=Stream}

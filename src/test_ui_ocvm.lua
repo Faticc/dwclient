@@ -125,7 +125,7 @@ end
 local CLIENT_MODULES = {
     "ui.lua", "chat_format.lua", "mc_protocol.lua", "fml.lua", "cfb8.lua", "aes.lua",
     "bit_compat.lua", "rsa.lua", "bignum.lua", "sha1.lua", "rng.lua", "session.lua",
-    "cluster_client.lua", "modlist.lua", "channels.lua", "hwid.lua",
+    "modlist.lua", "channels.lua", "hwid.lua",
 }
 
 local extra = {}

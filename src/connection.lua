@@ -100,10 +100,7 @@ local GhostConnection = {}
 GhostConnection.__index = GhostConnection
 
 -- session = { access_token=, uuid=, username= }; local_mod_list = { [modid]=version }
--- `cluster` (optional, see cluster_client.lua) is forwarded into the Connection so
--- incoming AES/CFB8 payloads can be split across Linked Card workers instead of
--- decrypted entirely on this computer; nil just means "always local".
-function M.new(host, port, session, local_mod_list, join_server_fn, yield_fn, cluster)
+function M.new(host, port, session, local_mod_list, join_server_fn, yield_fn)
     local locale, extras = build_login_extras()
     return setmetatable({
         host = host,
@@ -112,7 +109,6 @@ function M.new(host, port, session, local_mod_list, join_server_fn, yield_fn, cl
         local_mod_list = local_mod_list,
         join_server_fn = join_server_fn,
         yield_fn = yield_fn or function() os.sleep(0) end,
-        cluster = cluster,
         locale = locale,
         login_extras = extras,
         conn = nil,
@@ -131,7 +127,7 @@ function GhostConnection:connect()
     if not handle then
         error("failed to connect to " .. self.host .. ":" .. self.port .. ": " .. tostring(err))
     end
-    self.conn = proto.new_connection(handle, self.yield_fn, self.cluster)
+    self.conn = proto.new_connection(handle, self.yield_fn)
 
     self.conn:send_packet(HANDSHAKE_SET_PROTOCOL,
         proto.write_varint(PROTOCOL_VERSION)

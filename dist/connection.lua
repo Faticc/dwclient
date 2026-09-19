@@ -62,7 +62,7 @@ return locale,table.concat(parts)
 end
 local GhostConnection={}
 GhostConnection.__index=GhostConnection
-function M.new(host,port,session,local_mod_list,join_server_fn,yield_fn,cluster)
+function M.new(host,port,session,local_mod_list,join_server_fn,yield_fn)
 local locale,extras=build_login_extras()
 return setmetatable({
 host=host,
@@ -71,7 +71,6 @@ session=session,
 local_mod_list=local_mod_list,
 join_server_fn=join_server_fn,
 yield_fn=yield_fn or function()os.sleep(0)end,
-cluster=cluster,
 locale=locale,
 login_extras=extras,
 conn=nil,
@@ -88,7 +87,7 @@ local handle,err=internet.open(self.host,self.port)
 if not handle then
 error("failed to connect to "..self.host..":"..self.port..": "..tostring(err))
 end
-self.conn=proto.new_connection(handle,self.yield_fn,self.cluster)
+self.conn=proto.new_connection(handle,self.yield_fn)
 self.conn:send_packet(HANDSHAKE_SET_PROTOCOL,
 proto.write_varint(PROTOCOL_VERSION)
 ..proto.write_string(self.host)

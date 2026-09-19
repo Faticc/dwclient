@@ -95,13 +95,12 @@ return self.data:sub(self.pos)
 end
 local Connection={}
 Connection.__index=Connection
-function M.new_connection(handle,yield_fn,cluster)
+function M.new_connection(handle,yield_fn)
 return setmetatable({
 handle=handle,
 enc_in=nil,
 enc_out=nil,
 yield_fn=yield_fn or function()os.sleep(0)end,
-cluster=cluster,
 },Connection)
 end
 function Connection:enable_encryption(shared_secret16)
@@ -111,7 +110,7 @@ end
 function Connection:_raw_read(n)
 local data=M.read_exact(self.handle,n,self.yield_fn)
 if self.enc_in then
-data=self.enc_in:decrypt(data,self.yield_fn,self.cluster)
+data=self.enc_in:decrypt(data,self.yield_fn)
 end
 return data
 end

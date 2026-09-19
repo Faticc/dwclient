@@ -32,7 +32,7 @@ local files = {}
 local names = {
     "main.lua", "session.lua", "hwid.lua", "auth.lua", "connection.lua", "fml.lua",
     "ui.lua", "mc_protocol.lua", "cfb8.lua", "aes.lua", "bit_compat.lua", "rsa.lua",
-    "bignum.lua", "sha1.lua", "rng.lua", "chat_format.lua", "cluster_client.lua",
+    "bignum.lua", "sha1.lua", "rng.lua", "chat_format.lua",
     "modlist.lua", "channels.lua",
 }
 for _, name in ipairs(names) do
@@ -41,6 +41,21 @@ end
 -- Токен нужен только чтобы пройти проверку в начале main.lua: до сети дело не дойдёт.
 files["home/dwclient/session.lua"] =
     'return{username="TestBot",uuid="00000000-0000-0000-0000-000000000000",access_token="x"}\n'
+
+-- Отдельно -- строка состояния. До неё выполнение не доходит (клиент упирается в
+-- отсутствие интернет-карты раньше), а один раз она уже уронила клиента прямо в игре:
+-- "%d" в Lua 5.3 не принимает результат деления, потому что тот всегда float. Проверка
+-- дословно повторяет ту строку на настоящей машине, где totalMemory даёт не круглое
+-- число килобайт.
+files["home/dwclient/status.lua"] = [[
+local computer = require("computer")
+local total, free = computer.totalMemory(), computer.freeMemory()
+local ok, res = pcall(string.format, "mem %dK/%dK  %s",
+  math.floor((total - free) / 1024), math.floor(total / 1024), "connected")
+local f = io.open("/home/status.txt", "w")
+f:write(ok and ("ok " .. res) or ("FAIL " .. tostring(res)))
+f:close()
+]]
 
 local vm = ocvm.new{
     name = "install", machine = repo .. "/openos-orig/machine/machine.lua",
@@ -59,6 +74,15 @@ vm:line("cd /home; clear")
 vm:idle(30)
 vm:line("/home/dwclient/main.lua", 600)
 vm:idle(120)
+
+vm:line("/home/dwclient/status.lua", 300)
+vm:idle(60)
+local status = vm.disks[1].fs:dump()["home/status.txt"] or "нет ответа"
+print("строка состояния: " .. status)
+if not status:match("^ok ") then
+    print("\nFAILED: строка состояния падает -- " .. status)
+    os.exit(1)
+end
 
 local screen = vm:text()
 print("экран после запуска:")

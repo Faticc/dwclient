@@ -16,7 +16,6 @@ local computer=require("computer")
 local connection=require("connection")
 local auth=require("auth")
 local chat_format=require("chat_format")
-local cluster_client=require("cluster_client")
 local ui_lib=require("ui")
 local SESSION=require("session")
 local HOST="proxy-1.metalabsmc.net"
@@ -35,15 +34,14 @@ local ui=ui_lib.new({title="ghost . "..SESSION.username.."@"..HOST..":"..PORT})
 local function say(text,color)
 if ui then ui:note(text,color)else print(text)end
 end
-local cluster=cluster_client.new()
 local conn
 local connected=false
 local input_buf={}
 local last_status=0
 local function status_line()
 local total,free=computer.totalMemory(),computer.freeMemory()
-return string.format("mem %dK/%dK  %s",(total-free)/1024,total/1024,
-connected and"connected"or"connecting")
+return string.format("mem %dK/%dK  %s",math.floor((total-free)/1024),
+math.floor(total/1024),connected and"connected"or"connecting")
 end
 local function handle_key_down(char,code)
 if code==keyboard.keys.enter or code==keyboard.keys.numpadenter then
@@ -101,10 +99,7 @@ end
 local function join_server_fn(access_token,uuid_no_dashes,server_hash)
 auth.join_server(access_token,uuid_no_dashes,server_hash)
 end
-conn=connection.new(HOST,PORT,SESSION,require("modlist"),join_server_fn,yield,cluster)
-say(cluster:available()
-and("cluster decrypt: "..#cluster.tunnels.." Linked Card worker(s)")
-or"cluster decrypt: off (no Linked Cards, decrypting locally)")
+conn=connection.new(HOST,PORT,SESSION,require("modlist"),join_server_fn,yield)
 say("connecting to "..HOST..":"..PORT.." as "..SESSION.username.." ...")
 if ui then ui:flush(true)end
 local ok,err=pcall(conn.connect,conn)

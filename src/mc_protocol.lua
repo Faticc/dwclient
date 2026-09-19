@@ -149,16 +149,12 @@ Connection.__index = Connection
 -- streams so a multi-KB encrypted packet (this server's REGISTER/mod-list payloads run
 -- into the tens of KB) gets yielded mid-decrypt/encrypt instead of only between whole
 -- packets -- see cfb8.lua's Stream:_process for why that matters.
--- `cluster` (optional, see cluster_client.lua) is forwarded into every decrypt call so
--- big incoming payloads can be split across Linked Card workers instead of decrypted
--- entirely on this computer -- nil (the default) just means "always decrypt locally".
-function M.new_connection(handle, yield_fn, cluster)
+function M.new_connection(handle, yield_fn)
     return setmetatable({
         handle = handle,
         enc_in = nil,
         enc_out = nil,
         yield_fn = yield_fn or function() os.sleep(0) end,
-        cluster = cluster,
     }, Connection)
 end
 
@@ -170,7 +166,7 @@ end
 function Connection:_raw_read(n)
     local data = M.read_exact(self.handle, n, self.yield_fn)
     if self.enc_in then
-        data = self.enc_in:decrypt(data, self.yield_fn, self.cluster)
+        data = self.enc_in:decrypt(data, self.yield_fn)
     end
     return data
 end

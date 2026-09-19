@@ -27,8 +27,7 @@ local Stream = {}
 Stream.__index = Stream
 
 -- Packs/unpacks the 4 32-bit register words <-> the 16-byte string form used both as
--- the initial CFB8 IV and as what gets shipped to cluster workers (see
--- cluster_client.lua and Stream:register()/:decrypt() below).
+-- the initial CFB8 IV.
 local function bytes16_to_regs(bytes16)
     local b0, b1, b2, b3 = string.byte(bytes16, 1, 4)
     local b4, b5, b6, b7 = string.byte(bytes16, 5, 8)
@@ -53,9 +52,6 @@ function Stream.new(shared_secret16, initial_register16)
     assert(#initial_register16 == 16, "initial CFB8 register must be 16 bytes")
     local r0, r1, r2, r3 = bytes16_to_regs(initial_register16)
     return setmetatable({
-        key16 = shared_secret16, -- kept around (not just the expanded round keys
-        -- below) so this Stream can hand its raw AES key to a cluster worker --
-        -- see decrypt() below.
         rk = aes.expand_key(shared_secret16),
         r0 = r0, r1 = r1, r2 = r2, r3 = r3,
     }, Stream)
@@ -102,44 +98,7 @@ function Stream:encrypt(plaintext, yield_fn)
     return self:_process(plaintext, false, yield_fn)
 end
 
--- The current 16-byte CFB8 register -- i.e. the IV a fresh Stream would need to pick
--- up exactly where this one is. Used to hand an already-buffered chunk of ciphertext
--- to a cluster worker (see cluster_client.lua) without re-deriving it.
-function Stream:register()
-    return regs_to_bytes16(self.r0, self.r1, self.r2, self.r3)
-end
-
--- Advances the register the way _process would have, but from the feedback bytes
--- alone (always the ciphertext bytes -- see the file header comment) instead of by
--- actually running AES. Used after a cluster decrypt, which already produced the
--- right plaintext but never touched this Stream's register.
-function Stream:_advance_register(feedback)
-    local n = #feedback
-    local tail
-    if n >= 16 then
-        tail = feedback:sub(n - 15, n)
-    else
-        tail = self:register():sub(n + 1, 16) .. feedback
-    end
-    self.r0, self.r1, self.r2, self.r3 = bytes16_to_regs(tail)
-end
-
--- `cluster` (optional, see cluster_client.lua), if given and `ciphertext` is big
--- enough to be worth the round trips, splits the decrypt across a pool of Linked
--- Cards (OpenComputers "tunnel" components) instead of running it all on this
--- computer -- only decrypt can be parallelized this way, not encrypt (see
--- cluster_client.lua's header comment for why). Falls back to local decryption on
--- any cluster failure -- no Linked Cards, a timeout, a worker error -- since the
--- register is never touched until a result is actually in hand, so falling back
--- mid-attempt is always safe.
-function Stream:decrypt(ciphertext, yield_fn, cluster)
-    if cluster and cluster:available() and #ciphertext >= cluster.min_size then
-        local ok, result = pcall(cluster.decrypt, cluster, ciphertext, self.key16, self:register(), yield_fn)
-        if ok then
-            self:_advance_register(ciphertext)
-            return result
-        end
-    end
+function Stream:decrypt(ciphertext, yield_fn)
     return self:_process(ciphertext, true, yield_fn)
 end
 
