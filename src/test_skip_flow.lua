@@ -12,19 +12,24 @@
 package.path = "./?.lua;" .. package.path
 
 local written = {}
-local to_read, read_pos = {}, 1
+
+-- Заглушка сокета ведёт себя как настоящий: это один поток байт, а не очередь пакетов.
+-- Read отдаёт столько, сколько попросили, и ровно поэтому буфер может забрать несколько
+-- пакетов за одно обращение -- как оно и происходит в игре.
+local stream, stream_pos = "", 1
+local reads = 0   -- обращений к "карте": в игре каждое стоит бюджета тика
 local fake_handle = {
     read = function(_, n)
-        local pending = to_read[1]
-        if not pending then return nil, "closed" end
-        local chunk = pending:sub(read_pos, read_pos + n - 1)
-        read_pos = read_pos + #chunk
-        if read_pos > #pending then table.remove(to_read, 1); read_pos = 1 end
+        reads = reads + 1
+        if stream_pos > #stream then return nil, "closed" end
+        local chunk = stream:sub(stream_pos, stream_pos + n - 1)
+        stream_pos = stream_pos + #chunk
         return chunk
     end,
     write = function(_, d) written[#written + 1] = d; return true end,
     close = function() end,
 }
+
 package.loaded["component"] = {}
 package.loaded["internet"] = { open = function() return fake_handle end }
 package.loaded["computer"] = { totalMemory = function() return 2 ^ 21 end,
@@ -54,7 +59,7 @@ local function frame(packet_id, payload)
     local body = proto.write_varint(packet_id) .. payload
     return proto.write_varint(#body) .. body
 end
-local function send_encrypted(data) to_read[#to_read + 1] = server:encrypt(data) end
+local function send_encrypted(data) stream = stream .. server:encrypt(data) end
 
 local function custom_payload(channel, data)
     return frame(0x3F, proto.write_string(channel) .. proto.write_ushort(#data) .. data)
@@ -68,7 +73,7 @@ local function check(label, got, expected)
 end
 
 -- Login Success, дальше рукопожатие и большой реестр.
-to_read[#to_read + 1] = frame(0x02, proto.write_string("uuid") .. proto.write_string("Ник"))
+stream = stream .. frame(0x02, proto.write_string("uuid") .. proto.write_string("Ник"))
 
 local conn = connection.new("h", 1, { username = "Ник", uuid = "u", access_token = "t" },
     require("modlist"), function() end, function() end)
@@ -97,6 +102,9 @@ local sent_total = 45000 + 8000
 print(string.format("  ..  расшифровано %d Б из более чем %d Б, прошедших через поток",
     decrypted, sent_total))
 check("расшифровано меньше килобайта", decrypted < 1024, true)
+
+print(string.format("  ..  обращений к сокету %d на %d пакетов", reads, conn.packets))
+check("обращений к сокету меньше, чем пакетов", reads < conn.packets, true)
 print("  ..  соединение закрылось как ожидалось: " .. tostring(reason):sub(1, 40))
 
 if failures > 0 then print("\n" .. failures .. " FAILED"); os.exit(1) end

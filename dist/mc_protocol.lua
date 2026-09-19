@@ -15,25 +15,6 @@ yield_fn(done,total)
 end
 end
 end
-function M.read_exact(handle,n,yield_fn,cpu_yield)
-yield_fn=yield_fn or default_yield
-local chunks={}
-local remaining=n
-while remaining>0 do
-local chunk,err=handle:read(remaining)
-if chunk==nil then
-error("connection closed while reading "..n.." bytes ("..remaining.." left): "..tostring(err))
-end
-if#chunk>0 then
-chunks[#chunks+1]=chunk
-remaining=remaining-#chunk
-if remaining>0 and cpu_yield then cpu_yield()end
-else
-yield_fn()
-end
-end
-return table.concat(chunks)
-end
 function M.write_varint(value)
 value=value%4294967296
 local out={}
@@ -48,32 +29,11 @@ end
 until value==0
 return table.concat(out)
 end
-function M.read_varint(handle)
-local value=0
-local shift=0
-while true do
-local byte=string.byte(M.read_exact(handle,1))
-value=value+(byte%128)*(2^shift)
-if byte<128 then break end
-shift=shift+7
-if shift>35 then error("VarInt too big")end
-end
-if value>=2147483648 then value=value-4294967296 end
-return value
-end
 function M.write_string(s)
 return M.write_varint(#s)..s
 end
 function M.write_ushort(n)
 return string.char(math.floor(n/256)%256,n%256)
-end
-function M.write_int(value)
-value=value%4294967296
-local b3=value%256;value=(value-b3)/256
-local b2=value%256;value=(value-b2)/256
-local b1=value%256;value=(value-b1)/256
-local b0=value%256
-return string.char(b0,b1,b2,b3)
 end
 local ByteReader={}
 ByteReader.__index=ByteReader
@@ -120,6 +80,8 @@ enc_in=nil,
 enc_out=nil,
 yield_fn=yield_fn,
 cpu_yield=cpu_yield or M.throttled(yield_fn),
+buf="",
+buf_pos=1,
 },Connection)
 end
 function Connection:enable_encryption(shared_secret16)
@@ -127,21 +89,49 @@ self.enc_in=cfb8.Stream.new(shared_secret16)
 self.enc_out=cfb8.Stream.new(shared_secret16)
 end
 local TRACE_DECRYPT_OVER=4096
+local READ_CHUNK=8192
+function Connection:_fill(n)
+local have=#self.buf-self.buf_pos+1
+while have<n do
+local want=n-have
+if want<READ_CHUNK then want=READ_CHUNK end
+local chunk,err=self.handle:read(want)
+if chunk==nil then
+error("connection closed while reading "..n.." bytes ("..(n-have).." left): "..tostring(err))
+end
+if#chunk>0 then
+if self.buf_pos>1 then
+self.buf=self.buf:sub(self.buf_pos)
+self.buf_pos=1
+end
+self.buf=self.buf..chunk
+have=#self.buf-self.buf_pos+1
+if have<n and self.cpu_yield then self.cpu_yield()end
+else
+self.yield_fn()
+end
+end
+end
+function Connection:_take(n)
+self:_fill(n)
+local out=self.buf:sub(self.buf_pos,self.buf_pos+n-1)
+self.buf_pos=self.buf_pos+n
+return out
+end
 function Connection:_raw_read(n)
-local data=M.read_exact(self.handle,n,self.yield_fn,self.cpu_yield)
+local data=self:_take(n)
 if self.enc_in then
 data=self.enc_in:decrypt(data,self.cpu_yield)
 end
 return data
 end
 function Connection:_read_varint_raw()
-local value=0
-local shift=0
+local value,mult=0,1
 while true do
 local byte=string.byte(self:_raw_read(1))
-value=value+(byte%128)*(2^shift)
+value=value+(byte%128)*mult
 if byte<128 then break end
-shift=shift+7
+mult=mult*128
 end
 if value>=2147483648 then value=value-4294967296 end
 return value
@@ -151,10 +141,10 @@ function Connection:read_packet(wants)
 local length=self:_read_varint_raw()
 self.last_length=length
 if not self.enc_in then
-local reader=M.new_reader(M.read_exact(self.handle,length,self.yield_fn,self.cpu_yield))
+local reader=M.new_reader(self:_take(length))
 return reader:read_varint(),reader
 end
-local raw=M.read_exact(self.handle,length,self.yield_fn,self.cpu_yield)
+local raw=self:_take(length)
 local first=self.enc_in:decrypt(raw:sub(1,1),self.cpu_yield)
 local packet_id=string.byte(first)
 local mode=wants and wants(packet_id)or"full"
