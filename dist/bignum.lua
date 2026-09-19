@@ -182,8 +182,49 @@ function M.mod(a,m,yield_fn)
 local _,r=M.divmod(a,m,yield_fn)
 return r
 end
+local function shift_down(a,n)
+if n<=0 then return copy(a)end
+local out={}
+for i=n+1,#a do out[i-n]=a[i]end
+return normalize(out)
+end
+local function truncate(a,n)
+local out={}
+for i=1,n do out[i]=a[i]or 0 end
+return normalize(out)
+end
+function M.barrett(m,yield_fn)
+m=normalize(m)
+local k=#m
+local b2k={}
+for i=1,2*k do b2k[i]=0 end
+b2k[2*k+1]=1
+local mu=M.divmod(b2k,m,yield_fn)
+return{m=m,k=k,mu=mu}
+end
+function M.barrett_reduce(ctx,x)
+local m,k,mu=ctx.m,ctx.k,ctx.mu
+x=normalize(x)
+assert(#x<=2*k,"barrett: число больше b^(2k), приведение неприменимо")
+local q=shift_down(M.mul(shift_down(x,k-1),mu),k+1)
+local r=truncate(x,k+1)
+local qm=truncate(M.mul(q,m),k+1)
+if M.compare(r,qm)<0 then
+local borrow={}
+for i=1,k+1 do borrow[i]=0 end
+borrow[k+2]=1
+r=M.sub(M.add(r,borrow),qm)
+else
+r=M.sub(r,qm)
+end
+while M.compare(r,m)>=0 do
+r=M.sub(r,m)
+end
+return r
+end
 function M.modexp(base,exp,m,yield_fn)
-base=M.mod(base,m,yield_fn)
+local ctx=M.barrett(m,yield_fn)
+base=M.barrett_reduce(ctx,base)
 local result=M.from_int(1)
 exp=normalize(exp)
 local bits={}
@@ -193,9 +234,9 @@ bits[#bits+1]=e[1]%2
 e=shr1(e)
 end
 for i=#bits,1,-1 do
-result=M.mod(M.mul(result,result),m,yield_fn)
+result=M.barrett_reduce(ctx,M.mul(result,result))
 if bits[i]==1 then
-result=M.mod(M.mul(result,base),m,yield_fn)
+result=M.barrett_reduce(ctx,M.mul(result,base))
 end
 if yield_fn then yield_fn()end
 end

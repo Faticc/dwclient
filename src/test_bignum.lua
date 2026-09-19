@@ -63,4 +63,47 @@ local got_hex = to_hex(bn.to_bytes(result, #hex_to_bytes(expected_hex)))
 check("2048-bit modexp (e=65537)", got_hex == expected_hex)
 print(string.format("modexp took %.3f seconds (single AES desktop CPU)", elapsed))
 
-os.exit(all_ok and 0 or 1)
+if not all_ok then os.exit(1) end
+
+-- --------------------------------------------------------------------------
+-- Приведение по Барретту: тот же остаток, что честное деление
+-- --------------------------------------------------------------------------
+--
+-- Барретт даёт ответ без деления, но оценка частного в нём занижена -- и если поправку
+-- сделать неверно, остаток выйдет больше модуля или на модуль меньше нужного. Такая
+-- ошибка не заметна на глаз: RSA просто даст неверный шифротекст, а сервер ответит
+-- невнятным отказом. Поэтому сверяем с divmod на случайных числах и на краях.
+math.randomseed(20260919)
+local function rand_bytes(n)
+    local t = {}
+    for i = 1, n do t[i] = string.char(math.random(0, 255)) end
+    return table.concat(t)
+end
+
+local barrett_fails = 0
+for _, mlen in ipairs({ 4, 16, 64, 128 }) do
+    for _ = 1, 20 do
+        local mb = rand_bytes(mlen)
+        mb = string.char(math.max(1, string.byte(mb, 1))) .. mb:sub(2)
+        local m = bn.from_bytes(mb)
+        local ctx = bn.barrett(m)
+        local x = bn.from_bytes(rand_bytes(math.random(1, 2 * mlen)))
+        if bn.compare(x, bn.mul(m, m)) < 0 then
+            if bn.compare(bn.barrett_reduce(ctx, x), bn.mod(x, m)) ~= 0 then
+                barrett_fails = barrett_fails + 1
+            end
+        end
+    end
+end
+
+local m = bn.from_bytes(rand_bytes(64))
+local ctx = bn.barrett(m)
+local one = bn.from_int(1)
+for _, x in ipairs({ bn.from_int(0), bn.sub(m, one), m,
+                     bn.sub(bn.mul(m, m), one) }) do
+    if bn.compare(bn.barrett_reduce(ctx, x), bn.mod(x, m)) ~= 0 then
+        barrett_fails = barrett_fails + 1
+    end
+end
+print("barrett vs divmod: " .. (barrett_fails == 0 and "OK" or (barrett_fails .. " расхождений")))
+if barrett_fails > 0 then os.exit(1) end

@@ -6,10 +6,10 @@
 	label = "dwclient",
 	keep = { "session.lua", "hwid.lua" },
 	files = {
-		{ "README.md",       size = 12732, crc = "2a840d59" },
+		{ "README.md",       size = 14793, crc = "553d1ec9" },
 		{ "aes.lua",         size = 4638, crc = "e464b0b3" },
 		{ "auth.lua",        size = 1384, crc = "438203c5" },
-		{ "bignum.lua",      size = 3615, crc = "01ff8b88" },
+		{ "bignum.lua",      size = 4553, crc = "58628a78" },
 		{ "bit_compat.lua",  size = 4478, crc = "36c5d789" },
 		{ "cfb8.lua",        size = 2522, crc = "cfe34513" },
 		{ "channels.lua",    size = 1883, crc = "0e36165e" },
