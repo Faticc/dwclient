@@ -36,15 +36,15 @@ NAME = "dwclient"
 VERSION = "1.0"
 LABEL = "dwclient"
 
-# Never shipped: the tests, this toolchain, the built copy itself, and the machine
-# description -- that last one is per-install, and hwid.lua is generated locally by
-# ghost_client/tools/make_hwid.py rather than downloaded from a repository.
+# Never shipped: the tests, this toolchain and the built copy itself.
 SKIP_DIRS = {"dist", "tools", ".git"}
-SKIP_FILES = {"hwid.lua", "install.lua"}
+SKIP_FILES = {"install.lua"}
 SKIP_PREFIX = ("test_",)
 
-# Files the updater must not overwrite once they exist: whatever the owner edited.
-KEEP = ("main.lua", "hwid.lua")
+# Files the updater must not overwrite once they exist: the two the owner edits. Getting
+# this wrong would wipe someone's credentials on a routine update, so session.lua matters
+# more here than anything else in the build.
+KEEP = ("session.lua", "hwid.lua")
 
 
 def is_lua_source(rel: str) -> bool:

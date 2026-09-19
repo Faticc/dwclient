@@ -1,6 +1,6 @@
-# Per-install, never published: the machine description this bot reports, and anything
-# captured off a real client (a capture contains real hardware identifiers).
-hwid.lua
+# Never published: anything captured off a real client -- a capture holds real hardware
+# identifiers. hwid.lua itself IS shipped: the one in this repository describes a made-up
+# machine derived from a seed, not anybody's actual computer.
 *.bin
 machine_profile.json
 __pycache__/

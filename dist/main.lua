@@ -1,16 +1,16 @@
 local computer=require("computer")
 local connection=require("connection")
-local session_mod=require("session")
+local auth=require("auth")
 local chat_format=require("chat_format")
 local cluster_client=require("cluster_client")
 local ui_lib=require("ui")
-local SESSION={
-username="YourNick",
-uuid="00000000-0000-0000-0000-000000000000",
-access_token="PUT-A-FRESH-SESSION-ID-HERE",
-}
+local SESSION=require("session")
 local HOST="proxy-1.metalabsmc.net"
 local PORT=25606
+if SESSION.access_token==nil or SESSION.access_token==""then
+print("session.lua: не вписан access_token -- без него сервер не пустит")
+return
+end
 local keyboard_ok,keyboard=pcall(require,"keyboard")
 local event_ok,event=pcall(require,"event")
 local unicode_ok,unicode=pcall(require,"unicode")
@@ -85,7 +85,7 @@ ui:flush()
 end
 end
 local function join_server_fn(access_token,uuid_no_dashes,server_hash)
-session_mod.join_server(access_token,uuid_no_dashes,server_hash)
+auth.join_server(access_token,uuid_no_dashes,server_hash)
 end
 conn=connection.new(HOST,PORT,SESSION,require("modlist"),join_server_fn,yield,cluster)
 say(cluster:available()

@@ -3,8 +3,8 @@ Entry point. Put this whole ghost_client_lua/ folder on an OpenComputers disk, t
 `main.lua`. Needs an Internet Card (tier 1 is enough) and, ideally, a Data Card for real
 randomness (see rng.lua).
 
-*** Fill in SESSION below with values obtained elsewhere -- this deliberately never logs
-    in with a username/password itself. ***
+*** Who logs in lives in session.lua, not here -- fill in the access_token there. This
+    deliberately never logs in with a username/password itself. ***
 
 Everything runs in ONE coroutine: the packet loop, the keyboard and the redraw. That is
 not tidiness, it is a requirement. OpenComputers delivers each key_down event to exactly
@@ -20,21 +20,21 @@ program that polls the keyboard and exactly one that pushes the screen.
 local computer = require("computer")
 
 local connection = require("connection")
-local session_mod = require("session")
+local auth = require("auth")
 local chat_format = require("chat_format")
 local cluster_client = require("cluster_client")
 local ui_lib = require("ui")
 
--- ---------------------------------------------------------------------------
--- EDIT THESE:
-local SESSION = {
-    username = "YourNick",
-    uuid = "00000000-0000-0000-0000-000000000000", -- with or without dashes, either is fine
-    access_token = "PUT-A-FRESH-SESSION-ID-HERE",
-}
+-- Кто заходит -- в session.lua, это единственный файл под правку руками, и обновление
+-- его не трогает. Здесь только куда заходить.
+local SESSION = require("session")
 local HOST = "proxy-1.metalabsmc.net"
 local PORT = 25606 -- Galaxy. (Industrial is 25600 and is a different pack entirely.)
--- ---------------------------------------------------------------------------
+
+if SESSION.access_token == nil or SESSION.access_token == "" then
+    print("session.lua: не вписан access_token -- без него сервер не пустит")
+    return
+end
 
 local keyboard_ok, keyboard = pcall(require, "keyboard")
 local event_ok, event = pcall(require, "event")
@@ -132,7 +132,7 @@ local function yield()
 end
 
 local function join_server_fn(access_token, uuid_no_dashes, server_hash)
-    session_mod.join_server(access_token, uuid_no_dashes, server_hash)
+    auth.join_server(access_token, uuid_no_dashes, server_hash)
 end
 
 conn = connection.new(HOST, PORT, SESSION, require("modlist"), join_server_fn, yield, cluster)

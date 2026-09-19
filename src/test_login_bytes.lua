@@ -46,20 +46,10 @@ local fake_handle = {
     close = function() end,
 }
 
--- A stand-in for hwid.lua, which is per-install and deliberately not in this repository
--- (make_hwid.py generates the real one). The framing is what this test is about; with
--- the real file present the resulting packet matches the Python client's byte for byte,
--- which is how the wire format was confirmed in the first place.
-package.loaded["hwid"] = {
-    locale = "ru_RU",
-    fields = {
-        "AAAAAAAAAAAAAAAAAAAAAA==", "BBBBBBBBBBBBBBBBBBBBBB==",
-        "CCCCCCCCCCCCCCCCCCCCCC==", "DDDDDDDDDDDDDDDDDDDDDD==",
-        "EEEEEEEEEEEEEEEEEEEEEE==", "FFFFFFFFFFFFFFFFFFFFFF==",
-        "GGGGGGGGGGGGGGGGGGGGGG==", "HHHHHHHHHHHHHHHHHHHHHH==",
-    },
-}
-
+-- The real hwid.lua is used, not a stand-in: it ships with the client, and with it in
+-- place the packet this builds matches the Python client's byte for byte -- which is how
+-- the wire format was confirmed in the first place. Regenerating hwid.lua with another
+-- seed changes the field lengths but not the framing, so this still passes.
 package.loaded["component"] = {}
 package.loaded["internet"] = { open = function() return fake_handle end }
 package.loaded["computer"] = { totalMemory = function() return 196608 end,
