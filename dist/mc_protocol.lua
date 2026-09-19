@@ -1,6 +1,19 @@
 local cfb8=require("cfb8")
 local M={}
 local function default_yield()require("computer").pullSignal(0)end
+local WATCHDOG_MARGIN=2.0
+function M.throttled(yield_fn,interval)
+local uptime=require("computer").uptime
+local last=uptime()
+interval=interval or WATCHDOG_MARGIN
+return function()
+local now=uptime()
+if now-last>=interval then
+last=now
+yield_fn()
+end
+end
+end
 function M.read_exact(handle,n,yield_fn)
 yield_fn=yield_fn or default_yield
 local chunks={}
@@ -96,12 +109,14 @@ return self.data:sub(self.pos)
 end
 local Connection={}
 Connection.__index=Connection
-function M.new_connection(handle,yield_fn)
+function M.new_connection(handle,yield_fn,cpu_yield)
+yield_fn=yield_fn or default_yield
 return setmetatable({
 handle=handle,
 enc_in=nil,
 enc_out=nil,
-yield_fn=yield_fn or default_yield,
+yield_fn=yield_fn,
+cpu_yield=cpu_yield or M.throttled(yield_fn),
 },Connection)
 end
 function Connection:enable_encryption(shared_secret16)
@@ -111,7 +126,7 @@ end
 function Connection:_raw_read(n)
 local data=M.read_exact(self.handle,n,self.yield_fn)
 if self.enc_in then
-data=self.enc_in:decrypt(data,self.yield_fn)
+data=self.enc_in:decrypt(data,self.cpu_yield)
 end
 return data
 end
@@ -139,7 +154,7 @@ payload=payload or""
 local body=M.write_varint(packet_id)..payload
 local framed=M.write_varint(#body)..body
 if self.enc_out then
-framed=self.enc_out:encrypt(framed,self.yield_fn)
+framed=self.enc_out:encrypt(framed,self.cpu_yield)
 end
 local ok,err=self.handle:write(framed)
 if not ok then

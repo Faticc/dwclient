@@ -64,13 +64,15 @@ local GhostConnection={}
 GhostConnection.__index=GhostConnection
 function M.new(host,port,session,local_mod_list,join_server_fn,yield_fn)
 local locale,extras=build_login_extras()
+yield_fn=yield_fn or function()require("computer").pullSignal(0)end
 return setmetatable({
 host=host,
 port=port,
 session=session,
 local_mod_list=local_mod_list,
 join_server_fn=join_server_fn,
-yield_fn=yield_fn or function()require("computer").pullSignal(0)end,
+yield_fn=yield_fn,
+cpu_yield=proto.throttled(yield_fn),
 locale=locale,
 login_extras=extras,
 conn=nil,
@@ -87,7 +89,7 @@ local handle,err=internet.open(self.host,self.port)
 if not handle then
 error("failed to connect to "..self.host..":"..self.port..": "..tostring(err))
 end
-self.conn=proto.new_connection(handle,self.yield_fn)
+self.conn=proto.new_connection(handle,self.yield_fn,self.cpu_yield)
 self.conn:send_packet(HANDSHAKE_SET_PROTOCOL,
 proto.write_varint(PROTOCOL_VERSION)
 ..proto.write_string(self.host)
@@ -124,8 +126,8 @@ local n,e,mod_len=rsa.parse_public_key(public_key_der)
 local shared_secret=rng.random_bytes(16)
 local digest_hex=server_hash_hex(server_id,shared_secret,public_key_der)
 self.join_server_fn(self.session.access_token,(self.session.uuid:gsub("-","")),digest_hex)
-local enc_secret=rsa.encrypt(n,e,mod_len,shared_secret,rng.random_byte,self.yield_fn)
-local enc_token=rsa.encrypt(n,e,mod_len,verify_token,rng.random_byte,self.yield_fn)
+local enc_secret=rsa.encrypt(n,e,mod_len,shared_secret,rng.random_byte,self.cpu_yield)
+local enc_token=rsa.encrypt(n,e,mod_len,verify_token,rng.random_byte,self.cpu_yield)
 self.conn:send_packet(ENCRYPTION_RESPONSE,
 proto.write_ushort(#enc_secret)..enc_secret
 ..proto.write_ushort(#enc_token)..enc_token)
