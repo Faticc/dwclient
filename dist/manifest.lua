@@ -1,0 +1,32 @@
+-- What gets installed, and how it is verified. size and crc are written by
+-- tools/build.py -- do not edit by hand: the installer checks downloads against them.
+{
+	name = "dwclient",
+	version = "1.0",
+	label = "dwclient",
+	keep = { "main.lua", "hwid.lua" },
+	files = {
+		{ "README.md",                 size = 7501, crc = "913e4fc2" },
+		{ "aes.lua",                   size = 4638, crc = "e464b0b3" },
+		{ "bignum.lua",                size = 3615, crc = "01ff8b88" },
+		{ "bit_compat.lua",            size = 4478, crc = "36c5d789" },
+		{ "cfb8.lua",                  size = 2770, crc = "5e92b463" },
+		{ "channels.lua",              size = 1883, crc = "0e36165e" },
+		{ "chat_format.lua",           size = 6707, crc = "5c09e9e6" },
+		{ "cluster_client.lua",        size = 2419, crc = "a2a3c544" },
+		{ "cluster_master_test.lua",   size = 3907, crc = "f8e05631" },
+		{ "cluster_worker.lua",        size = 658, crc = "455374a8" },
+		{ "cluster_worker_bundle.lua", size = 12584, crc = "0c7e007d" },
+		{ "connection.lua",            size = 5907, crc = "119bf0ab" },
+		{ "fml.lua",                   size = 3124, crc = "da5b205d" },
+		{ "main.lua",                  size = 3719, crc = "069190a6" },
+		{ "mc_protocol.lua",           size = 3637, crc = "fd9c33d0" },
+		{ "modlist.lua",               size = 4877, crc = "1380f592" },
+		{ "rng.lua",                   size = 512, crc = "bc093e88" },
+		{ "rsa.lua",                   size = 2249, crc = "ba2b4eaf" },
+		{ "session.lua",               size = 1338, crc = "adad6442" },
+		{ "sha1.lua",                  size = 1755, crc = "7f6e5173" },
+		{ "ui.lua",                    size = 4674, crc = "98714362" },
+		{ "update.lua",                size = 6817, crc = "9326d5fd" },
+	},
+}

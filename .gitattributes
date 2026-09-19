@@ -1,0 +1,3 @@
+# The manifest CRC32s are computed over LF content; keep it that way everywhere.
+* text=auto eol=lf
+*.bin binary

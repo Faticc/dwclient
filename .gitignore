@@ -1,0 +1,7 @@
+# Per-install, never published: the machine description this bot reports, and anything
+# captured off a real client (a capture contains real hardware identifiers).
+hwid.lua
+*.bin
+machine_profile.json
+__pycache__/
+luac.out
