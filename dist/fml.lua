@@ -1,4 +1,5 @@
 local proto=require("mc_protocol")
+local trace=require("trace")
 local M={}
 M.CHANNEL_REGISTER="REGISTER"
 M.CHANNEL_HS="FML|HS"
@@ -30,6 +31,7 @@ end
 local function encode_client_hello()
 return write_i8(DISC_CLIENT_HELLO)..write_i8(FML_PROTOCOL_VERSION)
 end
+local mod_count=0
 local function encode_mod_list(mods)
 local parts,n,count={},1,0
 for modid,version in pairs(mods)do
@@ -38,6 +40,7 @@ parts[n]=proto.write_string(modid)
 parts[n+1]=proto.write_string(version)
 n=n+2
 end
+mod_count=count
 return write_i8(DISC_MOD_LIST)..proto.write_varint(count)..table.concat(parts)
 end
 local function encode_handshake_ack(phase)
@@ -49,6 +52,7 @@ function M.new(local_mod_list,send_payload_fn,channels)
 return setmetatable({
 register_payload=encode_register(channels or require("channels")),
 mod_list_payload=encode_mod_list(local_mod_list),
+mod_count=mod_count,
 send_payload=send_payload_fn,
 state="HELLO",
 done=false,
@@ -76,8 +80,12 @@ end
 if not self.mod_list_payload then
 error("FML handshake restarted after release(): the mod list is gone")
 end
+trace.step(self.state=="HELLO"and"FML: Server Hello"
+or"FML: Server Hello заново (передача на другой сервер)")
 if self.state=="HELLO"then
 self.send_payload(M.CHANNEL_REGISTER,self.register_payload)
+trace.step(string.format("FML: объявил каналы (%d Б) и %d модов (%d Б)",
+#self.register_payload,self.mod_count,#self.mod_list_payload))
 end
 self.send_payload(M.CHANNEL_HS,encode_client_hello())
 self.send_payload(M.CHANNEL_HS,self.mod_list_payload)
@@ -85,10 +93,12 @@ self.state="WAITINGSERVERDATA"
 self.done=false
 elseif self.state=="WAITINGSERVERDATA"then
 if discriminator~=DISC_MOD_LIST then return end
+trace.step("FML: получил список модов сервера")
 self.send_payload(M.CHANNEL_HS,encode_handshake_ack(ORD_WAITINGSERVERDATA))
 self.state="WAITINGSERVERCOMPLETE"
 elseif self.state=="WAITINGSERVERCOMPLETE"then
 if discriminator<DISC_MOD_ID_DATA then return end
+trace.step("FML: получил реестр блоков и предметов")
 self.send_payload(M.CHANNEL_HS,encode_handshake_ack(ORD_WAITINGSERVERCOMPLETE))
 self.state="PENDINGCOMPLETE"
 elseif self.state=="PENDINGCOMPLETE"then
@@ -98,6 +108,7 @@ elseif self.state=="COMPLETE"then
 self.send_payload(M.CHANNEL_HS,encode_handshake_ack(ORD_COMPLETE))
 self.state="DONE"
 self.done=true
+trace.step("FML: рукопожатие завершено")
 end
 end
 return M

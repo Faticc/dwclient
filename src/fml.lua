@@ -19,6 +19,7 @@ once, up front, and `release()` then drops every table behind them. On a real OC
 machine that is the difference between the handshake fitting and not.
 ]]
 local proto = require("mc_protocol")
+local trace = require("trace")
 
 local M = {}
 
@@ -72,6 +73,8 @@ end
 -- Built with a table + concat rather than repeated `..`: 164 entries means 328 string
 -- joins, and doing those one at a time allocates (and then collects) an intermediate
 -- string per entry, each one longer than the last.
+local mod_count = 0
+
 local function encode_mod_list(mods)
     local parts, n, count = {}, 1, 0
     for modid, version in pairs(mods) do
@@ -80,6 +83,7 @@ local function encode_mod_list(mods)
         parts[n + 1] = proto.write_string(version)
         n = n + 2
     end
+    mod_count = count
     return write_i8(DISC_MOD_LIST) .. proto.write_varint(count) .. table.concat(parts)
 end
 
@@ -96,6 +100,7 @@ function M.new(local_mod_list, send_payload_fn, channels)
     return setmetatable({
         register_payload = encode_register(channels or require("channels")),
         mod_list_payload = encode_mod_list(local_mod_list),
+        mod_count = mod_count,
         send_payload = send_payload_fn,
         state = "HELLO",
         done = false,
@@ -137,8 +142,12 @@ function FmlHandshake:_on_message(discriminator, reader)
         if not self.mod_list_payload then
             error("FML handshake restarted after release(): the mod list is gone")
         end
+        trace.step(self.state == "HELLO" and "FML: Server Hello"
+            or "FML: Server Hello заново (передача на другой сервер)")
         if self.state == "HELLO" then
             self.send_payload(M.CHANNEL_REGISTER, self.register_payload)
+            trace.step(string.format("FML: объявил каналы (%d Б) и %d модов (%d Б)",
+                #self.register_payload, self.mod_count, #self.mod_list_payload))
         end
         self.send_payload(M.CHANNEL_HS, encode_client_hello())
         self.send_payload(M.CHANNEL_HS, self.mod_list_payload)
@@ -146,10 +155,12 @@ function FmlHandshake:_on_message(discriminator, reader)
         self.done = false
     elseif self.state == "WAITINGSERVERDATA" then
         if discriminator ~= DISC_MOD_LIST then return end
+        trace.step("FML: получил список модов сервера")
         self.send_payload(M.CHANNEL_HS, encode_handshake_ack(ORD_WAITINGSERVERDATA))
         self.state = "WAITINGSERVERCOMPLETE"
     elseif self.state == "WAITINGSERVERCOMPLETE" then
         if discriminator < DISC_MOD_ID_DATA then return end -- an ack, or a stray message
+        trace.step("FML: получил реестр блоков и предметов")
         -- A real client reconciles block/item numeric ids here. Nothing here tracks
         -- world state, so there is nothing to reconcile -- just acknowledge.
         self.send_payload(M.CHANNEL_HS, encode_handshake_ack(ORD_WAITINGSERVERCOMPLETE))
@@ -161,6 +172,7 @@ function FmlHandshake:_on_message(discriminator, reader)
         self.send_payload(M.CHANNEL_HS, encode_handshake_ack(ORD_COMPLETE))
         self.state = "DONE"
         self.done = true
+        trace.step("FML: рукопожатие завершено")
     end
 end
 

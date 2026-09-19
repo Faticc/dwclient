@@ -71,11 +71,12 @@ local YIELD_EVERY = 64
 
 function Stream:_process(data, is_decrypt, yield_fn)
     local out = {}
+    local n = #data
     local rk = self.rk
     local keystream_byte = aes.keystream_byte
     local char = string.char
     local r0, r1, r2, r3 = self.r0, self.r1, self.r2, self.r3
-    for i = 1, #data do
+    for i = 1, n do
         local ks_byte = keystream_byte(rk, r0, r1, r2, r3)
         local in_byte = string.byte(data, i)
         local out_byte = bxor(in_byte, ks_byte)
@@ -87,7 +88,9 @@ function Stream:_process(data, is_decrypt, yield_fn)
         out[i] = char(out_byte)
         if yield_fn and i % YIELD_EVERY == 0 then
             self.r0, self.r1, self.r2, self.r3 = r0, r1, r2, r3
-            yield_fn()
+            -- Сколько уже сделано и сколько всего -- чтобы уступка могла показать
+            -- прогресс. Кто не хочет, просто игнорирует доводы.
+            yield_fn(i, n)
         end
     end
     self.r0, self.r1, self.r2, self.r3 = r0, r1, r2, r3

@@ -17,6 +17,7 @@ local connection=require("connection")
 local auth=require("auth")
 local chat_format=require("chat_format")
 local ui_lib=require("ui")
+local trace=require("trace")
 local SESSION=require("session")
 local HOST="proxy-1.metalabsmc.net"
 local PORT=25606
@@ -34,14 +35,26 @@ local ui=ui_lib.new({title="ghost . "..SESSION.username.."@"..HOST..":"..PORT})
 local function say(text,color)
 if ui then ui:note(text,color)else print(text)end
 end
+local status_line
+local status_override
+trace.init(function(text)say(text,ui_lib.COLOR_DIM)end,
+function(text)
+status_override=text~=""and text or nil
+if ui then ui:status(status_override or status_line())end
+end)
 local conn
 local connected=false
 local input_buf={}
 local last_status=0
-local function status_line()
+function status_line()
 local total,free=computer.totalMemory(),computer.freeMemory()
-return string.format("mem %dK/%dK  %s",math.floor((total-free)/1024),
-math.floor(total/1024),connected and"connected"or"connecting")
+local base=string.format("mem %dK/%dK  %s",math.floor((total-free)/1024),
+math.floor(total/1024),connected and"в игре"or"вход")
+if conn and conn.packets and conn.packets>0 then
+base=string.format("%s  пакетов %d, последний 0x%02X (%d Б)",
+base,conn.packets,conn.last_id or 0,conn.last_size or 0)
+end
+return base
 end
 local function handle_key_down(char,code)
 if code==keyboard.keys.enter or code==keyboard.keys.numpadenter then
@@ -76,18 +89,19 @@ end
 end
 end
 local stop_requested=false
-local function yield()
+local function yield(done,total)
 local name,_,char,code=computer.pullSignal(0)
 if name=="key_down"then
 if input_enabled then pcall(handle_key_down,char,code)end
 elseif name=="interrupted"then
 stop_requested=true
 end
+if status_override then trace.progress(done,total)end
 if ui then
 local now=computer.uptime()
 if now-last_status>=1 then
 last_status=now
-ui:status(status_line())
+if not status_override then ui:status(status_line())end
 end
 ui:flush()
 end

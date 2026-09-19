@@ -32,7 +32,7 @@ local files = {}
 local names = {
     "main.lua", "session.lua", "hwid.lua", "auth.lua", "connection.lua", "fml.lua",
     "ui.lua", "mc_protocol.lua", "cfb8.lua", "aes.lua", "bit_compat.lua", "rsa.lua",
-    "bignum.lua", "sha1.lua", "rng.lua", "chat_format.lua",
+    "bignum.lua", "sha1.lua", "rng.lua", "chat_format.lua", "trace.lua",
     "modlist.lua", "channels.lua",
 }
 for _, name in ipairs(names) do

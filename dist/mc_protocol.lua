@@ -1,4 +1,5 @@
 local cfb8=require("cfb8")
+local trace=require("trace")
 local M={}
 local function default_yield()require("computer").pullSignal(0)end
 local WATCHDOG_MARGIN=2.0
@@ -6,11 +7,11 @@ function M.throttled(yield_fn,interval)
 local uptime=require("computer").uptime
 local last=uptime()
 interval=interval or WATCHDOG_MARGIN
-return function()
+return function(done,total)
 local now=uptime()
 if now-last>=interval then
 last=now
-yield_fn()
+yield_fn(done,total)
 end
 end
 end
@@ -123,10 +124,14 @@ function Connection:enable_encryption(shared_secret16)
 self.enc_in=cfb8.Stream.new(shared_secret16)
 self.enc_out=cfb8.Stream.new(shared_secret16)
 end
+local TRACE_DECRYPT_OVER=4096
 function Connection:_raw_read(n)
 local data=M.read_exact(self.handle,n,self.yield_fn)
 if self.enc_in then
+local loud=trace.enabled()and n>=TRACE_DECRYPT_OVER
+if loud then trace.busy(string.format("расшифровка %d Б",n))end
 data=self.enc_in:decrypt(data,self.cpu_yield)
+if loud then trace.done(string.format("расшифровано %d Б",n))end
 end
 return data
 end

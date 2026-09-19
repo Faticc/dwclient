@@ -4,6 +4,7 @@ local fml=require("fml")
 local rsa=require("rsa")
 local sha1=require("sha1")
 local rng=require("rng")
+local trace=require("trace")
 local PROTOCOL_VERSION=5
 local HANDSHAKE_SET_PROTOCOL=0x00
 local LOGIN_START=0x00
@@ -78,6 +79,9 @@ login_extras=extras,
 conn=nil,
 fml_handshake=nil,
 entity_id=nil,
+packets=0,
+last_id=nil,
+last_size=0,
 },GhostConnection)
 end
 function GhostConnection:_send_custom_payload(channel,data)
@@ -85,6 +89,7 @@ self.conn:send_packet(CUSTOM_PAYLOAD_SERVERBOUND,
 proto.write_string(channel)..proto.write_ushort(#data)..data)
 end
 function GhostConnection:connect()
+trace.step("открываю сокет на "..self.host..":"..self.port)
 local handle,err=internet.open(self.host,self.port)
 if not handle then
 error("failed to connect to "..self.host..":"..self.port..": "..tostring(err))
@@ -99,15 +104,21 @@ self.conn:send_packet(LOGIN_START,
 proto.write_string(self.locale)
 ..proto.write_string(self.session.username)
 ..self.login_extras)
+trace.step(string.format("Login Start ушёл (%d Б: локаль + ник + 8 полей)",
+#self.locale+#self.session.username+#self.login_extras+4))
 self.login_extras=nil
+trace.busy("жду ответа сервера")
 local packet_id,reader=self.conn:read_packet()
+trace.done()
 if packet_id==LOGIN_DISCONNECT then
 error("disconnected during login: "..reader:read_string())
 elseif packet_id==ENCRYPTION_REQUEST then
+trace.step("пришёл Encryption Request")
 self:_do_encryption(reader)
 elseif packet_id~=LOGIN_SUCCESS then
 error(string.format("unexpected packet 0x%02x during login",packet_id))
 end
+trace.step("вошёл; собираю рукопожатие FML")
 self.fml_handshake=fml.new(self.local_mod_list,function(ch,data)
 self:_send_custom_payload(ch,data)
 end)
@@ -115,6 +126,7 @@ self.local_mod_list=nil
 package.loaded["modlist"]=nil
 package.loaded["channels"]=nil
 require("computer").freeMemory()
+trace.step("списки модов и каналов закодированы и выброшены")
 end
 function GhostConnection:_do_encryption(reader)
 local server_id=reader:read_string()
@@ -123,16 +135,26 @@ local public_key_der=reader:read(pubkey_len)
 local verify_token_len=reader:read_i16()
 local verify_token=reader:read(verify_token_len)
 local n,e,mod_len=rsa.parse_public_key(public_key_der)
+trace.step(string.format("ключ сервера разобран (%d бит)",mod_len*8))
 local shared_secret=rng.random_bytes(16)
 local digest_hex=server_hash_hex(server_id,shared_secret,public_key_der)
+trace.busy("отмечаюсь на сервере сессий")
 self.join_server_fn(self.session.access_token,(self.session.uuid:gsub("-","")),digest_hex)
+trace.done("отметился на сервере сессий")
+trace.busy("шифрую секрет (RSA)")
 local enc_secret=rsa.encrypt(n,e,mod_len,shared_secret,rng.random_byte,self.cpu_yield)
+trace.done("секрет зашифрован")
+trace.busy("шифрую маркер (RSA)")
 local enc_token=rsa.encrypt(n,e,mod_len,verify_token,rng.random_byte,self.cpu_yield)
+trace.done("маркер зашифрован")
 self.conn:send_packet(ENCRYPTION_RESPONSE,
 proto.write_ushort(#enc_secret)..enc_secret
 ..proto.write_ushort(#enc_token)..enc_token)
 self.conn:enable_encryption(shared_secret)
+trace.step("Encryption Response ушёл, шифрование включено")
+trace.busy("жду Login Success")
 local packet_id,reader2=self.conn:read_packet()
+trace.done()
 if packet_id==LOGIN_DISCONNECT then
 error("disconnected after encryption: "..reader2:read_string())
 elseif packet_id~=LOGIN_SUCCESS then
@@ -159,6 +181,9 @@ local ok,packet_id,reader=pcall(conn.read_packet,conn)
 if not ok then
 return"connection closed unexpectedly: "..tostring(packet_id)
 end
+self.packets=self.packets+1
+self.last_id=packet_id
+self.last_size=#reader.data
 if packet_id==KEEP_ALIVE_CLIENTBOUND then
 conn:send_packet(KEEP_ALIVE,reader:read(4))
 elseif packet_id==CHAT_CLIENTBOUND then
@@ -168,10 +193,12 @@ local channel=reader:read_string()
 local data_len=reader:read_i16()
 handshake:handle_payload(channel,reader:read(data_len))
 elseif packet_id==JOIN_GAME_CLIENTBOUND then
+trace.step("Join Game: сервер впустил в мир")
 self.entity_id=reader:read(4)
 self:_send_initial_packets()
 if on_join then on_join(self.entity_id)end
 elseif packet_id==KICK_DISCONNECT_CLIENTBOUND then
+trace.step("сервер прислал кик")
 return reader:read_string()
 end
 self.yield_fn()
