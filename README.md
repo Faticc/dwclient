@@ -99,6 +99,7 @@ python tools/build.py --src src --out dist
 lua src/test_login_bytes.lua    логин собирается побайтово так же, как в питоновском клиенте
 lua src/test_ui_ocvm.lua        окно на эмулированной машине DwOS + счётчики вызовов
 lua src/test_install_ocvm.lua   ставит клиент в /home/dwclient и запускает его из /home
+lua src/test_yield_ocvm.lua     проверяет, что уступка управления настоящая
 lua src/test_sha1.lua  src/test_aes.lua  src/test_cfb8.lua  src/test_rsa.lua
 lua src/test_server_hash.lua    хеш сервера, включая java-шную двоичную дополняющую форму
 ```

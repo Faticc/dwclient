@@ -77,15 +77,11 @@ end
 end
 local stop_requested=false
 local function yield()
-if input_enabled then
-local ev,_,char,code=event.pull(0,"key_down")
-if ev=="key_down"then
-pcall(handle_key_down,char,code)
-elseif ev=="interrupted"then
+local name,_,char,code=computer.pullSignal(0)
+if name=="key_down"then
+if input_enabled then pcall(handle_key_down,char,code)end
+elseif name=="interrupted"then
 stop_requested=true
-end
-else
-os.sleep(0)
 end
 if ui then
 local now=computer.uptime()

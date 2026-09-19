@@ -9,6 +9,7 @@ client's own log line (see that file's header comment): McSkill's authlib runs i
 per-Minecraft-version URL instead of the generic /sessionserver/... path.
 ]]
 local component = require("component")
+local computer = require("computer")
 
 local M = {}
 
@@ -49,7 +50,7 @@ function M.join_server(access_token, uuid_no_dashes, server_hash)
             end
             break -- normal EOF
         elseif #chunk == 0 then
-            os.sleep(0)
+            computer.pullSignal(0)
         end
     end
 

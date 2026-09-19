@@ -1,4 +1,5 @@
 local component=require("component")
+local computer=require("computer")
 local M={}
 M.JOIN_URL="https://auth.mcskill.ru/join1710"
 local function json_escape(s)
@@ -26,7 +27,7 @@ error("join_server request failed: "..tostring(reason))
 end
 break
 elseif#chunk==0 then
-os.sleep(0)
+computer.pullSignal(0)
 end
 end
 local ok,code,message=pcall(function()

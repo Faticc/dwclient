@@ -1,7 +1,8 @@
 local cfb8=require("cfb8")
 local M={}
+local function default_yield()require("computer").pullSignal(0)end
 function M.read_exact(handle,n,yield_fn)
-yield_fn=yield_fn or function()os.sleep(0)end
+yield_fn=yield_fn or default_yield
 local chunks={}
 local remaining=n
 while remaining>0 do
@@ -100,7 +101,7 @@ return setmetatable({
 handle=handle,
 enc_in=nil,
 enc_out=nil,
-yield_fn=yield_fn or function()os.sleep(0)end,
+yield_fn=yield_fn or default_yield,
 },Connection)
 end
 function Connection:enable_encryption(shared_secret16)

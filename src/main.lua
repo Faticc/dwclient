@@ -126,21 +126,25 @@ local function handle_key_down(char, code)
     end
 end
 
--- Called once per socket read attempt and once per packet. event.pull(0, ...) yields
--- once even with nothing pending -- it does not busy-loop -- and unlike a bare
--- os.sleep(0) it has an event filter, so it cannot swallow a key_down that this
--- program's own handler should have seen.
+-- Вызывается на каждую попытку чтения из сокета и на каждый пакет. Здесь ровно одно
+-- место во всей программе, которое уступает управление, и ровно одно, которое читает
+-- клавиатуру -- потому и гонок за нажатия нет.
+--
+-- computer.pullSignal(0), а НЕ event.pull(0, ...) и не os.sleep(0). Оба последних
+-- выглядят как уступка, но ею не являются: внутри они считают дедлайн "сейчас + 0", на
+-- первой же проверке видят, что ждать нечего, и выходят, ни разу не позвав
+-- computer.pullSignal. То есть управление не отдаётся вообще. Пока расшифровка шла на
+-- соседних компьютерах, это сходило с рук; как только 45 КБ реестра стали считаться
+-- здесь, сторож OpenComputers убил программу с "too long without yielding" -- и она же
+-- никогда не увидела бы ни одного нажатия. Проверено на эмуляторе, см.
+-- test_yield_ocvm.lua.
 local stop_requested = false
 local function yield()
-    if input_enabled then
-        local ev, _, char, code = event.pull(0, "key_down")
-        if ev == "key_down" then
-            pcall(handle_key_down, char, code)
-        elseif ev == "interrupted" then
-            stop_requested = true
-        end
-    else
-        os.sleep(0)
+    local name, _, char, code = computer.pullSignal(0)
+    if name == "key_down" then
+        if input_enabled then pcall(handle_key_down, char, code) end
+    elseif name == "interrupted" then
+        stop_requested = true
     end
     if ui then
         local now = computer.uptime()

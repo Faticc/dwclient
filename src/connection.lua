@@ -108,7 +108,7 @@ function M.new(host, port, session, local_mod_list, join_server_fn, yield_fn)
         session = session,
         local_mod_list = local_mod_list,
         join_server_fn = join_server_fn,
-        yield_fn = yield_fn or function() os.sleep(0) end,
+        yield_fn = yield_fn or function() require("computer").pullSignal(0) end,
         locale = locale,
         login_extras = extras,
         conn = nil,

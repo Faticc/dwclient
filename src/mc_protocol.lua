@@ -10,7 +10,15 @@ local cfb8 = require("cfb8")
 
 local M = {}
 
--- `yield_fn` (optional, defaults to a plain os.sleep(0)) is called once per read
+-- Единственный настоящий способ уступить управление. os.sleep(0) и event.pull(0, ...)
+-- им НЕ являются: оба считают дедлайн "сейчас + 0", сразу видят, что ждать нечего, и
+-- выходят, ни разу не позвав computer.pullSignal. Программа, которая "уступает" так,
+-- не уступает вовсе и рано или поздно ловит "too long without yielding".
+-- require внутри, а не сверху: модуля "computer" нет под обычным Lua, а этот файл
+-- грузят офлайновые тесты.
+local function default_yield() require("computer").pullSignal(0) end
+
+-- `yield_fn` (optional) is called once per read
 -- attempt below -- this loop is what actually blocks while idle waiting for the next
 -- byte from the server (a bare os.sleep(0) has no event-name filter, so it can and
 -- does silently swallow a pending key_down event before main.lua's own filtered
@@ -18,7 +26,7 @@ local M = {}
 -- the "too long without yielding" kick below was fixed, since every idle wait for the
 -- next packet ran through here, not just large encrypted payloads).
 function M.read_exact(handle, n, yield_fn)
-    yield_fn = yield_fn or function() os.sleep(0) end
+    yield_fn = yield_fn or default_yield
     local chunks = {}
     local remaining = n
     while remaining > 0 do
@@ -145,7 +153,7 @@ end
 local Connection = {}
 Connection.__index = Connection
 
--- `yield_fn` (optional, defaults to a plain os.sleep(0)) is forwarded into the CFB8
+-- `yield_fn` (optional) is forwarded into the CFB8
 -- streams so a multi-KB encrypted packet (this server's REGISTER/mod-list payloads run
 -- into the tens of KB) gets yielded mid-decrypt/encrypt instead of only between whole
 -- packets -- see cfb8.lua's Stream:_process for why that matters.
@@ -154,7 +162,7 @@ function M.new_connection(handle, yield_fn)
         handle = handle,
         enc_in = nil,
         enc_out = nil,
-        yield_fn = yield_fn or function() os.sleep(0) end,
+        yield_fn = yield_fn or default_yield,
     }, Connection)
 end
 

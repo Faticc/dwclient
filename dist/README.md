@@ -103,6 +103,7 @@ naive     screen=671  buffer=0    bitblt=0   → в 1.9 раза меньше в
 lua test_login_bytes.lua    логин собирается побайтово так же, как в питоновском клиенте
 lua test_ui_ocvm.lua        окно на эмулированной машине DwOS + счётчики вызовов
 lua test_install_ocvm.lua   ставит клиент в /home/dwclient и запускает его из /home
+lua test_yield_ocvm.lua     проверяет, что уступка управления настоящая
 lua test_sha1.lua  test_aes.lua  test_cfb8.lua  test_rsa.lua  test_bignum.lua
 lua test_server_hash.lua    хеш сервера, включая java-шную двоичную дополняющую форму
 ```
