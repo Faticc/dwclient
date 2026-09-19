@@ -276,10 +276,15 @@ function GhostConnection:run(on_chat, on_join)
     -- молчит, всё равно есть кому: чтение из сокета уступает по-настоящему, если данных нет.
     local tick_yield = proto.throttled(self.yield_fn, 0.1)
 
+    local started = trace.elapsed()
     while true do
         local ok, packet_id, reader, skipped = pcall(conn.read_packet, conn, wants)
         if not ok then
-            return "connection closed unexpectedly: " .. tostring(packet_id)
+            -- К причине обрыва обязательно прикладываются наработки: "оборвалось на
+            -- третьей секунде и сотне пакетов" и "через десять минут и сто тысяч" -- это
+            -- разные болезни, а текст ошибки у них одинаковый.
+            return string.format("%s [прожито %.0f с, пакетов %d, последний 0x%02X]",
+                tostring(packet_id), trace.elapsed() - started, self.packets, self.last_id or 0)
         end
 
         self.packets = self.packets + 1

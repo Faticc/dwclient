@@ -14,7 +14,7 @@
 		{ "cfb8.lua",        size = 2522, crc = "cfe34513" },
 		{ "channels.lua",    size = 1883, crc = "0e36165e" },
 		{ "chat_format.lua", size = 6707, crc = "5c09e9e6" },
-		{ "connection.lua",  size = 7735, crc = "195136e3" },
+		{ "connection.lua",  size = 7877, crc = "ed62de8f" },
 		{ "fml.lua",         size = 3747, crc = "c879fa8a" },
 		{ "hwid.lua",        size = 602, crc = "cb703006" },
 		{ "main.lua",        size = 4566, crc = "669b4fbe" },

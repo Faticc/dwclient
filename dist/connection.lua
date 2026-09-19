@@ -188,10 +188,12 @@ function GhostConnection:run(on_chat,on_join)
 local conn,handshake=self.conn,self.fml_handshake
 local wants=function(id)return self:_wants(id)end
 local tick_yield=proto.throttled(self.yield_fn,0.1)
+local started=trace.elapsed()
 while true do
 local ok,packet_id,reader,skipped=pcall(conn.read_packet,conn,wants)
 if not ok then
-return"connection closed unexpectedly: "..tostring(packet_id)
+return string.format("%s [прожито %.0f с, пакетов %d, последний 0x%02X]",
+tostring(packet_id),trace.elapsed()-started,self.packets,self.last_id or 0)
 end
 self.packets=self.packets+1
 self.last_id=packet_id
